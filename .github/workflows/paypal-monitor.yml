@@ -107,6 +107,7 @@ jobs:
                 amount_currency: (.transaction_amount.currency // null)
               })
             | map(select(.transaction_status == "S"))
+            | map(select(.transaction_event_code != "T1900"))
             | map(select(.amount_value >= $min_amount))
           ' /tmp/paypal-report.json > /tmp/payments.json
 
@@ -137,6 +138,56 @@ jobs:
           fi
 
           echo "Processed transaction state now contains $(jq 'length' data/processed_transactions.json) transaction(s)."
+
+      - name: Send new payments to HubSpot
+        if: success()
+        env:
+          HUBSPOT_SERVICE_KEY: ${{ secrets.HUBSPOT_SERVICE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${HUBSPOT_SERVICE_KEY:-}" ]; then
+            echo "Missing GitHub repository secret: HUBSPOT_SERVICE_KEY."
+            exit 1
+          fi
+
+          COUNT="$(jq 'length' /tmp/new-payments.json)"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No new PayPal payments to send to HubSpot."
+            exit 0
+          fi
+
+          jq -c '.[]' /tmp/new-payments.json | while IFS= read -r payment; do
+            TX_ID="$(printf '%s' "$payment" | jq -r '.transaction_id')"
+            AMOUNT="$(printf '%s' "$payment" | jq -r '.amount_value')"
+            CURRENCY="$(printf '%s' "$payment" | jq -r '.transaction_amount.currency_code // "USD"')"
+            SUBJECT="$(printf '%s' "$payment" | jq -r '.transaction_subject // "PayPal payment"')"
+            ACCOUNT_ID="$(printf '%s' "$payment" | jq -r '.paypal_account_id // ""')"
+
+            PAYLOAD="$(jq -n \
+              --arg name "PayPal Payment $TX_ID" \
+              --arg amount "$AMOUNT" \
+              --arg currency "$CURRENCY" \
+              --arg subject "$SUBJECT" \
+              --arg tx "$TX_ID" \
+              --arg account "$ACCOUNT_ID" \
+              '{properties:{dealname:$name,amount:$amount,description:("PayPal transaction: "+$tx+" | Currency: "+$currency+" | Subject: "+$subject+" | PayPal account: "+$account)}}')"
+
+            STATUS="$(curl -sS --retry 3 -o /tmp/hubspot-response.json -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY" \
+              -H "Content-Type: application/json" \
+              --data "$PAYLOAD" \
+              "https://api.hubapi.com/crm/v3/objects/deals")"
+
+            echo "HubSpot deal creation for PayPal transaction $TX_ID: HTTP $STATUS"
+            if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
+              echo "HubSpot response:"
+              jq . /tmp/hubspot-response.json 2>/dev/null || cat /tmp/hubspot-response.json
+              exit 1
+            fi
+          done
 
       - name: Save payment state
         run: |
