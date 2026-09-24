@@ -1,0 +1,37 @@
+name: PayPal Payment Monitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-paypal:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check PayPal transactions
+        env:
+          PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
+          PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
+          PAYPAL_ENV: sandbox
+          PAYPAL_LOOKBACK_MINUTES: "15"
+          PAYPAL_MIN_AMOUNT: "0"
+        run: python3 scripts/check_paypal.py
+
+      - name: Save processed transactions
+        run: |
+          if git diff --quiet -- data/processed_transactions.json; then
+            echo "No state changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/processed_transactions.json
+          git commit -m "chore: update PayPal transaction state"
+          git push
