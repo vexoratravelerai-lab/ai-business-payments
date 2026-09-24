@@ -158,6 +158,8 @@ grep -q 'lifecyclestage:"customer"' .github/workflows/paypal-monitor.yml
 grep -q 'customer|evangelist|other' .github/workflows/paypal-monitor.yml
 grep -q 'https://calendly.com/vexora-traveler-ai/30min' .github/workflows/paypal-monitor.yml
 grep -q 'Idempotency-Key' .github/workflows/paypal-monitor.yml
+grep -q 'HubSpot-side idempotency guard' .github/workflows/paypal-monitor.yml
+grep -q 'dealname.*EQ' .github/workflows/paypal-monitor.yml
 
 echo "PASS: PayPal normalization"
 echo "PASS: payer identity propagation"
