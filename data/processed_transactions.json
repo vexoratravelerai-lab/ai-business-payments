@@ -1,1 +1,65 @@
-[]
+[
+  {
+    "paypal_account_id": "T9AH8TNFRM7FC",
+    "transaction_id": "1BM62204WM7684705",
+    "paypal_reference_id": "9X2901048W423441B",
+    "paypal_reference_id_type": "TXN",
+    "transaction_event_code": "T0006",
+    "transaction_initiation_date": "2026-09-24T09:33:27+00:00",
+    "transaction_updated_date": "2026-09-24T09:33:27+00:00",
+    "transaction_amount": {
+      "currency_code": "USD",
+      "value": "10.00"
+    },
+    "fee_amount": {
+      "currency_code": "USD",
+      "value": "-0.79"
+    },
+    "transaction_status": "S",
+    "protection_eligibility": "01",
+    "instrument_type": "PayPal",
+    "instrument_sub_type": "PayPal Wallet",
+    "amount_value": 10.00,
+    "amount_currency": null
+  },
+  {
+    "paypal_account_id": "T9AH8TNFRM7FC",
+    "transaction_id": "6L862115D5081712K",
+    "paypal_reference_id": "15T48999SC626190B",
+    "paypal_reference_id_type": "TXN",
+    "transaction_event_code": "T0006",
+    "transaction_initiation_date": "2026-09-24T09:32:21+00:00",
+    "transaction_updated_date": "2026-09-24T09:32:21+00:00",
+    "transaction_amount": {
+      "currency_code": "USD",
+      "value": "10.00"
+    },
+    "fee_amount": {
+      "currency_code": "USD",
+      "value": "-0.79"
+    },
+    "transaction_status": "S",
+    "protection_eligibility": "01",
+    "instrument_type": "PayPal",
+    "instrument_sub_type": "PayPal Wallet",
+    "amount_value": 10.00,
+    "amount_currency": null
+  },
+  {
+    "transaction_id": "8TM22048D7703111B",
+    "transaction_event_code": "T1900",
+    "transaction_initiation_date": "2026-09-24T07:50:30+00:00",
+    "transaction_updated_date": "2026-09-24T07:50:30+00:00",
+    "transaction_amount": {
+      "currency_code": "USD",
+      "value": "5000.00"
+    },
+    "transaction_status": "S",
+    "transaction_subject": "Initial balance",
+    "protection_eligibility": "02",
+    "instrument_type": "PayPal",
+    "instrument_sub_type": "PayPal Wallet",
+    "amount_value": 5000.00,
+    "amount_currency": null
+  }
+]
