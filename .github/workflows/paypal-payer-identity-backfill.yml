@@ -1,0 +1,154 @@
+name: PayPal Payer Identity Backfill
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/paypal-payer-identity-backfill.yml"
+
+concurrency:
+  group: paypal-payment-monitor
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Recover missing payer identity
+        env:
+          PAYPAL_CLIENT_ID: \${{ secrets.PAYPAL_CLIENT_ID }}
+          PAYPAL_CLIENT_SECRET: \${{ secrets.PAYPAL_CLIENT_SECRET }}
+          HUBSPOT_SERVICE_KEY: \${{ secrets.HUBSPOT_SERVICE_KEY }}
+          NOTION_TOKEN: \${{ secrets.NOTION_TOKEN }}
+          NOTION_FUNNEL_DATA_SOURCE_ID: "560140e0-2581-4622-9db5-bf48501263fe"
+          PAYPAL_BASE_URL: "https://api-m.sandbox.paypal.com"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [ -n "\${PAYPAL_CLIENT_ID:-}" ] && [ -n "\${PAYPAL_CLIENT_SECRET:-}" ] || exit 0
+          test -f data/processed_transactions.json || exit 0
+
+          TOKEN_RESPONSE="\$(curl -sS --retry 3 -u "\$PAYPAL_CLIENT_ID:\$PAYPAL_CLIENT_SECRET" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data "grant_type=client_credentials" \
+            "\$PAYPAL_BASE_URL/v1/oauth2/token")"
+          TOKEN="\$(printf '%s' "\$TOKEN_RESPONSE" | jq -r '.access_token // ""')"
+          [ -n "\$TOKEN" ] || exit 0
+
+          jq -c '.[] | select((.payer_info.email_address // "") == "")' data/processed_transactions.json |
+          while IFS= read -r tx; do
+            TX_ID="\$(printf '%s' "\$tx" | jq -r '.transaction_id // ""')"
+            [ -n "\$TX_ID" ] || continue
+
+            HTTP_STATUS="\$(curl -sS --retry 2 -o /tmp/paypal-capture.json -w "%{http_code}" \
+              -H "Authorization: Bearer \$TOKEN" \
+              -H "Accept: application/json" \
+              "\$PAYPAL_BASE_URL/v2/payments/captures/\$TX_ID" || true)"
+
+            echo "Capture lookup \$TX_ID => HTTP \$HTTP_STATUS"
+            [ "\$HTTP_STATUS" = "200" ] || continue
+
+            PAYER_EMAIL="\$(jq -r '.payer.email_address // .payment_source.paypal.email_address // ""' /tmp/paypal-capture.json)"
+            PAYER_NAME="\$(jq -r '(.payer.name.given_name // .payment_source.paypal.name.given_name // "") as \$g | (.payer.name.surname // .payment_source.paypal.name.surname // "") as \$s | ((\$g + " " + \$s) | gsub("^ +| +$";""))' /tmp/paypal-capture.json)"
+            [ -n "\$PAYER_EMAIL" ] || continue
+
+            echo "Recovered payer identity for \$TX_ID."
+
+            TMP="\$(mktemp)"
+            jq --arg tx "\$TX_ID" --arg email "\$PAYER_EMAIL" --arg name "\$PAYER_NAME" \
+              'map(if .transaction_id == \$tx then .payer_info={email_address:\$email,payer_name:{full_name:\$name}} else . end)' \
+              data/processed_transactions.json > "\$TMP"
+            mv "\$TMP" data/processed_transactions.json
+
+            if [ -n "\${HUBSPOT_SERVICE_KEY:-}" ]; then
+              DEAL_PAYLOAD="\$(jq -n --arg n "PayPal Payment \$TX_ID" '{filterGroups:[{filters:[{propertyName:"dealname",operator:"EQ",value:\$n}]}],properties:["dealname"],limit:1}')"
+              DEAL_STATUS="\$(curl -sS --retry 3 -o /tmp/deal-search.json -w "%{http_code}" \
+                -X POST \
+                -H "Authorization: Bearer \$HUBSPOT_SERVICE_KEY" \
+                -H "Content-Type: application/json" \
+                --data "\$DEAL_PAYLOAD" \
+                "https://api.hubapi.com/crm/v3/objects/deals/search")"
+
+              if [ "\$DEAL_STATUS" = "200" ]; then
+                DEAL_ID="\$(jq -r '.results[0].id // ""' /tmp/deal-search.json)"
+                if [ -n "\$DEAL_ID" ]; then
+                  DESC="Payment status: Paid | PayPal transaction: \$TX_ID | Payer: \$PAYER_NAME | Email: \$PAYER_EMAIL"
+                  curl -sS --retry 3 -X PATCH \
+                    -H "Authorization: Bearer \$HUBSPOT_SERVICE_KEY" \
+                    -H "Content-Type: application/json" \
+                    --data "\$(jq -n --arg d "\$DESC" '{properties:{description:\$d}}')" \
+                    "https://api.hubapi.com/crm/v3/objects/deals/\$DEAL_ID" >/dev/null
+
+                  CONTACT_PAYLOAD="\$(jq -n --arg email "\$PAYER_EMAIL" '{filterGroups:[{filters:[{propertyName:"email",operator:"EQ",value:\$email}]}],properties:["email","firstname","lastname","lifecyclestage"],limit:1}')"
+                  CONTACT_STATUS="\$(curl -sS --retry 3 -o /tmp/contact-search.json -w "%{http_code}" \
+                    -X POST \
+                    -H "Authorization: Bearer \$HUBSPOT_SERVICE_KEY" \
+                    -H "Content-Type: application/json" \
+                    --data "\$CONTACT_PAYLOAD" \
+                    "https://api.hubapi.com/crm/v3/objects/contacts/search")"
+
+                  if [ "\$CONTACT_STATUS" = "200" ]; then
+                    CONTACT_ID="\$(jq -r '.results[0].id // ""' /tmp/contact-search.json)"
+                    CURRENT_LIFECYCLE="\$(jq -r '.results[0].properties.lifecyclestage // ""' /tmp/contact-search.json)"
+                    if [ -z "\$CONTACT_ID" ]; then
+                      CREATED_CONTACT="\$(curl -sS --retry 3 \
+                        -X POST \
+                        -H "Authorization: Bearer \$HUBSPOT_SERVICE_KEY" \
+                        -H "Content-Type: application/json" \
+                        --data "\$(jq -n --arg e "\$PAYER_EMAIL" --arg n "\$PAYER_NAME" '{properties:{email:\$e,lifecyclestage:"customer",firstname:(\$n|split(" ")[0]),lastname:(\$n|split(" ")|.[1:]|join(" "))}}')" \
+                        "https://api.hubapi.com/crm/v3/objects/contacts")"
+                      CONTACT_ID="\$(printf '%s' "\$CREATED_CONTACT" | jq -r '.id // ""')"
+                    elif [[ "\$CURRENT_LIFECYCLE" == "" || "\$CURRENT_LIFECYCLE" == "subscriber" || "\$CURRENT_LIFECYCLE" == "lead" || "\$CURRENT_LIFECYCLE" == "marketingqualifiedlead" || "\$CURRENT_LIFECYCLE" == "salesqualifiedlead" || "\$CURRENT_LIFECYCLE" == "opportunity" ]]; then
+                      curl -sS --retry 3 -X PATCH \
+                        -H "Authorization: Bearer \$HUBSPOT_SERVICE_KEY" \
+                        -H "Content-Type: application/json" \
+                        --data '{"properties":{"lifecyclestage":"customer"}}' \
+                        "https://api.hubapi.com/crm/v3/objects/contacts/\$CONTACT_ID" >/dev/null
+                    fi
+
+                    if [ -n "\$CONTACT_ID" ]; then
+                      curl -sS --retry 3 -X PUT \
+                        -H "Authorization: Bearer \$HUBSPOT_SERVICE_KEY" \
+                        -H "Content-Type: application/json" \
+                        "https://api.hubapi.com/crm/v4/objects/deals/\$DEAL_ID/associations/contacts/\$CONTACT_ID/3" >/dev/null
+                    fi
+                  fi
+                fi
+              fi
+            fi
+
+            QUEUE="data/pending_welcome_emails.json"
+            test -f "\$QUEUE" || printf '[]\n' > "\$QUEUE"
+            if ! jq -e --arg tx "\$TX_ID" 'any(.[]; .transaction_id == \$tx)' "\$QUEUE" >/dev/null; then
+              TMP_QUEUE="\$(mktemp)"
+              jq --arg tx "\$TX_ID" --arg email "\$PAYER_EMAIL" --arg name "\$PAYER_NAME" \
+                '. + [{transaction_id:\$tx,payer_email:\$email,payer_name:\$name,queued_reason:"Identity recovered by PayPal Payments API backfill"}]' \
+                "\$QUEUE" > "\$TMP_QUEUE"
+              mv "\$TMP_QUEUE" "\$QUEUE"
+            fi
+          done
+
+      - name: Save backfill state
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/processed_transactions.json data/pending_welcome_emails.json
+          if git diff --cached --quiet; then
+            echo "No identity backfill changes."
+            exit 0
+          fi
+          git commit -m "chore: persist PayPal payer identity backfill"
+          git push
