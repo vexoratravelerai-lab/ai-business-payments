@@ -175,24 +175,9 @@ echo "PASS: Resend recipient + subject + Calendly"
 echo "PASS: Idempotency key"
 echo "PASS: production workflow invariants"
 
-# Exercise the no-domain fallback without contacting Resend.
-QUEUE="$TMP_DIR/pending_welcome_emails.json"
-printf '[]\n' > "$QUEUE"
-QUEUED_PAYMENT="$(jq -n --arg tx "$TX_ID" --arg email "$PAYER_EMAIL" --arg name "$PAYER_NAME" \
-  '. + [{transaction_id:$tx,payer_email:$email,payer_name:$name,queued_reason:"Resend sender domain not configured"}]' <<<"[]")"
-printf '%s\n' "$QUEUED_PAYMENT" > "$QUEUE"
+# Verify that missing Resend configuration fails safely instead of persisting customer PII.
+grep -q 'without persisting customer PII' .github/workflows/paypal-monitor.yml
+grep -q 'del(.payer_info)' .github/workflows/paypal-monitor.yml
 
-test "$(jq -r 'length' "$QUEUE")" = "1"
-test "$(jq -r '.[0].transaction_id' "$QUEUE")" = "UNIT-TEST-001"
-test "$(jq -r '.[0].payer_email' "$QUEUE")" = "unit-test@example.invalid"
-test "$(jq -r '.[0].queued_reason' "$QUEUE")" = "Resend sender domain not configured"
-
-grep -q 'RESEND_FROM_ADDRESS' .github/workflows/paypal-monitor.yml
-grep -q 'pending_welcome_emails.json' .github/workflows/paypal-monitor.yml
-grep -q 'Welcome email .* queued' .github/workflows/paypal-monitor.yml
-grep -q 'Retry Pending Welcome Emails' .github/workflows/retry-pending-welcome-emails.yml
-grep -q 'paypal-$TX_ID-welcome-v1' .github/workflows/retry-pending-welcome-emails.yml
-grep -q 'git add data/processed_transactions.json data/new_payments.json' .github/workflows/paypal-monitor.yml
-
-echo "PASS: no-domain pending email queue"
-echo "PASS: pending queue retry workflow"
+echo "PASS: missing Resend configuration fails safely"
+echo "PASS: payer PII is not persisted in public repository state"
