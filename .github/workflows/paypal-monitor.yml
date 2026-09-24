@@ -69,7 +69,7 @@ jobs:
 
           jq -e '.transaction_details // []' /tmp/paypal-report.json >/dev/null
 
-          jq '
+          jq --argjson min_amount "$MIN_AMOUNT" '
             .transaction_details // []
             | map(.transaction_info // {})
             | map(select(.transaction_id != null))
@@ -80,35 +80,36 @@ jobs:
                 }
               )
             | map(select(.transaction_status == "S"))
-            | map(select(.amount_value >= ${MIN_AMOUNT}))
+            | map(select(.amount_value >= $min_amount))
           ' /tmp/paypal-report.json > /tmp/payments.json
 
-          BEFORE_COUNT="$(jq 'length' data/processed_transactions.json)"
-          jq --slurpfile processed data/processed_transactions.json '
-            map(select(([($processed[0][])] | index(.transaction_id)) | not))
+          jq -s --argjson current "$(cat data/processed_transactions.json)" '
+            .[0]
+            | map(select(([$current[]?.transaction_id] | index(.transaction_id)) | not))
           ' /tmp/payments.json > /tmp/new-payments.json
 
           NEW_COUNT="$(jq 'length' /tmp/new-payments.json)"
 
           if [ "$NEW_COUNT" -gt 0 ]; then
             echo "New successful PayPal payments detected: $NEW_COUNT"
-            jq -c '.[]' /tmp/new-payments.json | while IFS= read -r payment; do
-              echo "::notice::New PayPal payment: $(echo "$payment" | jq -r '.transaction_id // "unknown"') $(echo "$payment" | jq -r '.amount_value // 0') $(echo "$payment" | jq -r '.amount_currency // ""')"
-            done
 
             jq -s --arg now "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" '
-              [ .[0][] | . + {detected_at: $now} ]
+              .[0] | map(. + {detected_at: $now})
             ' /tmp/new-payments.json > data/new_payments.json
 
-            jq -s '.[0] + .[1] | unique_by(.transaction_id)' data/processed_transactions.json /tmp/new-payments.json > /tmp/processed.json
+            jq -s '
+              .[0] + .[1]
+              | unique_by(.transaction_id)
+            ' data/processed_transactions.json /tmp/new-payments.json > /tmp/processed.json
             mv /tmp/processed.json data/processed_transactions.json
           else
             printf '[]\n' > data/new_payments.json
             echo "No new successful PayPal payments."
           fi
 
+          BEFORE_COUNT="$(jq 'length' data/processed_transactions.json)"
           AFTER_COUNT="$(jq 'length' data/processed_transactions.json)"
-          echo "Processed transaction state: $BEFORE_COUNT -> $AFTER_COUNT"
+          echo "Processed transaction state size: $BEFORE_COUNT -> $AFTER_COUNT"
 
       - name: Save payment state
         run: |
