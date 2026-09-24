@@ -134,7 +134,20 @@ jobs:
             PAYER_EMAIL="$(printf '%s' "$payment" | jq -r '.payer_info.email_address // ""')"
             PAYER_NAME="$(printf '%s' "$payment" | jq -r '.payer_info.payer_name.full_name // ""')"
 
-            PAYLOAD="$(jq -n --arg name "PayPal Payment $TX_ID" --arg amount "$AMOUNT" --arg currency "$CURRENCY" --arg subject "$SUBJECT" --arg tx "$TX_ID" --arg account "$ACCOUNT_ID" --arg email "$PAYER_EMAIL" --arg payer "$PAYER_NAME" '{properties:{dealname:$name,amount:$amount,pipeline:"default",dealstage:"closedwon",description:("Payment status: Paid | PayPal transaction: "+$tx+" | Currency: "+$currency+" | Subject: "+$subject+" | PayPal account: "+$account+" | Payer: "+$payer+" | Email: "+$email)}}')"
+            # HubSpot-side idempotency guard: do not create a second deal for the same PayPal transaction.
+            DEAL_SEARCH_PAYLOAD="$(jq -n --arg name "PayPal Payment $TX_ID" '{filterGroups:[{filters:[{propertyName:"dealname",operator:"EQ",value:$name}]}],properties:["dealname","amount","dealstage"],limit:1}')"
+            DEAL_SEARCH_STATUS="$(curl -sS --retry 3 -o /tmp/hubspot-deal-search.json -w "%{http_code}" -X POST -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY" -H "Content-Type: application/json" --data "$DEAL_SEARCH_PAYLOAD" "https://api.hubapi.com/crm/v3/objects/deals/search")"
+            if [ "$DEAL_SEARCH_STATUS" != "200" ]; then
+              jq . /tmp/hubspot-deal-search.json 2>/dev/null || cat /tmp/hubspot-deal-search.json
+              exit 1
+            fi
+
+            EXISTING_DEAL_ID="$(jq -r '.results[0].id // ""' /tmp/hubspot-deal-search.json)"
+            if [ -n "$EXISTING_DEAL_ID" ]; then
+              DEAL_ID="$EXISTING_DEAL_ID"
+              echo "HubSpot deal for PayPal transaction $TX_ID already exists as $DEAL_ID; skipping duplicate creation."
+            else
+                          PAYLOAD="$(jq -n --arg name "PayPal Payment $TX_ID" --arg amount "$AMOUNT" --arg currency "$CURRENCY" --arg subject "$SUBJECT" --arg tx "$TX_ID" --arg account "$ACCOUNT_ID" --arg email "$PAYER_EMAIL" --arg payer "$PAYER_NAME" '{properties:{dealname:$name,amount:$amount,pipeline:"default",dealstage:"closedwon",description:("Payment status: Paid | PayPal transaction: "+$tx+" | Currency: "+$currency+" | Subject: "+$subject+" | PayPal account: "+$account+" | Payer: "+$payer+" | Email: "+$email)}}')"
 
             STATUS="$(curl -sS --retry 3 -o /tmp/hubspot-response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY" -H "Content-Type: application/json" --data "$PAYLOAD" "https://api.hubapi.com/crm/v3/objects/deals")"
 
@@ -145,6 +158,7 @@ jobs:
             fi
 
             DEAL_ID="$(jq -r '.id' /tmp/hubspot-response.json)"
+            fi
 
             if [ -n "$PAYER_EMAIL" ] && [ "$PAYER_EMAIL" != "null" ]; then
               CONTACT_SEARCH_PAYLOAD="$(jq -n --arg email "$PAYER_EMAIL" '{filterGroups:[{filters:[{propertyName:"email",operator:"EQ",value:$email}]}],properties:["email","firstname","lastname","lifecyclestage"],limit:1}')"
