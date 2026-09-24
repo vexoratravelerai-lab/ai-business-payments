@@ -30,3 +30,5 @@ PayPal production can be enabled later by changing the API base URL after the en
 ## Next layer
 
 After payment detection is verified, the next cloud step is to connect a payment event to the business workflow (HubSpot → Notion → Outlook) without depending on the user's local computer or a temporary public tunnel.
+
+<!-- workflow-trigger-check -->
