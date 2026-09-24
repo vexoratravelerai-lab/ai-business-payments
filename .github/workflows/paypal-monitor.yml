@@ -97,7 +97,8 @@ jobs:
           echo "New successful PayPal payments detected: $NEW_COUNT"
 
           if [ "$NEW_COUNT" -gt 0 ]; then
-            jq -s --arg now "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" '.[0] | map(. + {detected_at: $now})' /tmp/new-payments.json > data/new_payments.json
+            # Keep payer identity in the runner only. The repository is public, so persistent state must not contain customer PII.
+            jq -s --arg now "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" '.[0] | map((. + {detected_at: $now}) | del(.payer_info))' /tmp/new-payments.json > data/new_payments.json
             echo "Detected payments remain pending until downstream processing succeeds."
           else
             printf '[]\n' > data/new_payments.json
@@ -383,7 +384,7 @@ jobs:
             fi
           done
 
-      - name: Send or queue welcome email with Resend
+      - name: Send welcome email with Resend
         if: success()
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -392,13 +393,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          FILE="data/pending_welcome_emails.json"
-          test -f "$FILE" || printf '[]\n' > "$FILE"
-
           COUNT="$(jq 'length' /tmp/new-payments.json)"
           if [ "$COUNT" -eq 0 ]; then
             echo "No new PayPal payments to email."
             exit 0
+          fi
+
+          if [ -z "${RESEND_API_KEY:-}" ] || [ -z "${RESEND_FROM_ADDRESS:-}" ]; then
+            echo "Resend sender configuration is missing; failing safely so the payment is retried without persisting customer PII."
+            exit 1
           fi
 
           jq -c '.[]' /tmp/new-payments.json | while IFS= read -r payment; do
@@ -407,19 +410,7 @@ jobs:
             PAYER_NAME="$(printf '%s' "$payment" | jq -r '.payer_info.payer_name.full_name // ""')"
 
             if [ -z "$PAYER_EMAIL" ] || [ "$PAYER_EMAIL" = "null" ]; then
-              echo "No payer email for PayPal transaction $TX_ID; no welcome email queued."
-              continue
-            fi
-
-            # Without a verified sender domain, keep the customer email queued instead of
-            # failing the payment pipeline or retrying the PayPal transaction itself.
-            if [ -z "${RESEND_API_KEY:-}" ] || [ -z "${RESEND_FROM_ADDRESS:-}" ]; then
-              if ! jq -e --arg tx "$TX_ID" 'any(.[]; .transaction_id == $tx)' "$FILE" >/dev/null; then
-                TMP="$(mktemp)"
-                jq --arg tx "$TX_ID" --arg email "$PAYER_EMAIL" --arg name "$PAYER_NAME"                   '. + [{transaction_id:$tx,payer_email:$email,payer_name:$name,queued_reason:"Resend sender domain not configured"}]'                   "$FILE" > "$TMP"
-                mv "$TMP" "$FILE"
-              fi
-              echo "Welcome email for PayPal transaction $TX_ID queued until Resend sender configuration is available."
+              echo "No payer email for PayPal transaction $TX_ID; payment metadata remains contactless."
               continue
             fi
 
@@ -433,11 +424,6 @@ jobs:
               jq . /tmp/resend-response.json 2>/dev/null || cat /tmp/resend-response.json
               exit 1
             fi
-
-            # Successful delivery request means any matching queued copy is now obsolete.
-            TMP="$(mktemp)"
-            jq --arg tx "$TX_ID" 'map(select(.transaction_id != $tx))' "$FILE" > "$TMP"
-            mv "$TMP" "$FILE"
           done
 
       - name: Save payment state
@@ -446,11 +432,13 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Commit payment state only after all downstream steps in this job have succeeded.
           if [ "$(jq 'length' /tmp/new-payments.json)" -gt 0 ]; then
-            jq -s '.[0] + .[1] | unique_by(.transaction_id)' data/processed_transactions.json /tmp/new-payments.json > /tmp/processed.json
+            jq -s '.[0] + .[1] | map(del(.payer_info)) | unique_by(.transaction_id)' data/processed_transactions.json /tmp/new-payments.json > /tmp/processed.json
             mv /tmp/processed.json data/processed_transactions.json
           fi
 
-          git add data/processed_transactions.json data/new_payments.json data/pending_welcome_emails.json
+          # data/new_payments.json is only a sanitized snapshot; the full payload remains in /tmp for this run.
+          printf '[]\n' > data/new_payments.json
+          git add data/processed_transactions.json data/new_payments.json
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
