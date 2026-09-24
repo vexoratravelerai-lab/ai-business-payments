@@ -1,4 +1,5 @@
 name: PayPal Payment Monitor
+# manual smoke-test trigger
 
 on:
   push:
