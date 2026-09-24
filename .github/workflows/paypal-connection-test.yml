@@ -1,0 +1,45 @@
+name: PayPal Connection Test
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-paypal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Test PayPal Sandbox authentication
+        env:
+          PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
+          PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${PAYPAL_CLIENT_ID:-}" ] || [ -z "${PAYPAL_CLIENT_SECRET:-}" ]; then
+            echo "PayPal secrets are missing."
+            exit 1
+          fi
+
+          response="$(curl -fsS --retry 3 \
+            -u "$PAYPAL_CLIENT_ID:$PAYPAL_CLIENT_SECRET" \
+            -H "Accept: application/json" \
+            -H "Accept-Language: en_US" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data "grant_type=client_credentials" \
+            "https://api-m.sandbox.paypal.com/v1/oauth2/token")"
+
+          token="$(printf '%s' "$response" | jq -r '.access_token')"
+
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "PayPal authentication failed."
+            exit 1
+          fi
+
+          echo "PayPal Sandbox authentication succeeded."
