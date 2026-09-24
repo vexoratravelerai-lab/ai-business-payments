@@ -164,7 +164,7 @@ grep -q 'HubSpot-side idempotency guard' .github/workflows/paypal-monitor.yml
 grep -q 'dealname.*EQ' .github/workflows/paypal-monitor.yml
 grep -q 're-scan the lookback window' .github/workflows/paypal-monitor.yml
 grep -q 'Downstream systems provide idempotency' .github/workflows/paypal-monitor.yml
-grep -q 'No PayPal payments to email' .github/workflows/paypal-monitor.yml
+grep -q 'No new PayPal payments to email' .github/workflows/paypal-monitor.yml
 
 echo "PASS: PayPal normalization"
 echo "PASS: payer identity propagation"
