@@ -444,4 +444,5 @@ jobs:
             exit 0
           fi
           git commit -m "chore: update PayPal payment state"
+          git pull --rebase origin main
           git push
