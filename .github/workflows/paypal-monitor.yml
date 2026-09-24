@@ -131,7 +131,7 @@ jobs:
             PAYER_EMAIL="$(printf '%s' "$payment" | jq -r '.payer_info.email_address // ""')"
             PAYER_NAME="$(printf '%s' "$payment" | jq -r '.payer_info.payer_name.full_name // ""')"
 
-            PAYLOAD="$(jq -n --arg name "PayPal Payment $TX_ID" --arg amount "$AMOUNT" --arg currency "$CURRENCY" --arg subject "$SUBJECT" --arg tx "$TX_ID" --arg account "$ACCOUNT_ID" --arg email "$PAYER_EMAIL" --arg payer "$PAYER_NAME" '{properties:{dealname:$name,amount:$amount,description:("PayPal transaction: "+$tx+" | Currency: "+$currency+" | Subject: "+$subject+" | PayPal account: "+$account+" | Payer: "+$payer+" | Email: "+$email)}}')"
+            PAYLOAD="$(jq -n --arg name "PayPal Payment $TX_ID" --arg amount "$AMOUNT" --arg currency "$CURRENCY" --arg subject "$SUBJECT" --arg tx "$TX_ID" --arg account "$ACCOUNT_ID" --arg email "$PAYER_EMAIL" --arg payer "$PAYER_NAME" '{properties:{dealname:$name,amount:$amount,pipeline:"default",dealstage:"closedwon",description:("Payment status: Paid | PayPal transaction: "+$tx+" | Currency: "+$currency+" | Subject: "+$subject+" | PayPal account: "+$account+" | Payer: "+$payer+" | Email: "+$email)}}')"
 
             STATUS="$(curl -sS --retry 3 -o /tmp/hubspot-response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY" -H "Content-Type: application/json" --data "$PAYLOAD" "https://api.hubapi.com/crm/v3/objects/deals")"
 
