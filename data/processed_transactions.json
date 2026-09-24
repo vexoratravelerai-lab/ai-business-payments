@@ -24,12 +24,58 @@
   },
   {
     "paypal_account_id": "T9AH8TNFRM7FC",
+    "transaction_id": "5N4585120S358481V",
+    "paypal_reference_id": "1FP18184X3239924V",
+    "paypal_reference_id_type": "TXN",
+    "transaction_event_code": "T0006",
+    "transaction_initiation_date": "2026-09-24T10:26:05+00:00",
+    "transaction_updated_date": "2026-09-24T10:26:05+00:00",
+    "transaction_amount": {
+      "currency_code": "USD",
+      "value": "10.00"
+    },
+    "fee_amount": {
+      "currency_code": "USD",
+      "value": "-0.79"
+    },
+    "transaction_status": "S",
+    "protection_eligibility": "01",
+    "instrument_type": "PayPal",
+    "instrument_sub_type": "PayPal Wallet",
+    "amount_value": 10.00,
+    "amount_currency": null
+  },
+  {
+    "paypal_account_id": "T9AH8TNFRM7FC",
     "transaction_id": "6L862115D5081712K",
     "paypal_reference_id": "15T48999SC626190B",
     "paypal_reference_id_type": "TXN",
     "transaction_event_code": "T0006",
     "transaction_initiation_date": "2026-09-24T09:32:21+00:00",
     "transaction_updated_date": "2026-09-24T09:32:21+00:00",
+    "transaction_amount": {
+      "currency_code": "USD",
+      "value": "10.00"
+    },
+    "fee_amount": {
+      "currency_code": "USD",
+      "value": "-0.79"
+    },
+    "transaction_status": "S",
+    "protection_eligibility": "01",
+    "instrument_type": "PayPal",
+    "instrument_sub_type": "PayPal Wallet",
+    "amount_value": 10.00,
+    "amount_currency": null
+  },
+  {
+    "paypal_account_id": "T9AH8TNFRM7FC",
+    "transaction_id": "89C58615MC205402Y",
+    "paypal_reference_id": "0K902708L8146453B",
+    "paypal_reference_id_type": "TXN",
+    "transaction_event_code": "T0006",
+    "transaction_initiation_date": "2026-09-24T10:04:58+00:00",
+    "transaction_updated_date": "2026-09-24T10:04:58+00:00",
     "transaction_amount": {
       "currency_code": "USD",
       "value": "10.00"
