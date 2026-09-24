@@ -214,7 +214,9 @@ jobs:
                   {object:"block",type:"to_do",to_do:{rich_text:[{type:"text",text:{content:"Confirm customer information"}}],checked:false}},
                   {object:"block",type:"to_do",to_do:{rich_text:[{type:"text",text:{content:"Schedule onboarding meeting"}}],checked:false}},
                   {object:"block",type:"to_do",to_do:{rich_text:[{type:"text",text:{content:"Start automation setup"}}],checked:false}},
-                  {object:"block",type:"to_do",to_do:{rich_text:[{type:"text",text:{content:"Test first workflow"}}],checked:false}}
+                  {object:"block",type:"to_do",to_do:{rich_text:[{type:"text",text:{content:"Test first workflow"}}],checked:false}},
+                  {object:"block",type:"heading_2",heading_2:{rich_text:[{type:"text",text:{content:"Meeting"}}]}},
+                  {object:"block",type:"paragraph",paragraph:{rich_text:[{type:"text",text:{content:"Book onboarding meeting: https://calendly.com/vexora-traveler-ai/30min"}}]}}
                 ]
               }')"
 
