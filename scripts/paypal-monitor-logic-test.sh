@@ -174,9 +174,11 @@ echo "PASS: Resend recipient + subject + Calendly"
 echo "PASS: Idempotency key"
 echo "PASS: production workflow invariants"
 
-# Verify that missing Resend configuration fails safely instead of persisting customer PII.
-grep -q 'without persisting customer PII' .github/workflows/paypal-monitor.yml
-grep -q 'del(.payer_info)' .github/workflows/paypal-monitor.yml
+# Verify that missing Resend configuration fails safely without writing payment state to GitHub.
+grep -q 'Resend sender configuration is missing; failing safely' .github/workflows/paypal-monitor.yml
+grep -q 'Downstream systems provide idempotency' .github/workflows/paypal-monitor.yml
+! grep -q 'data/processed_transactions.json' .github/workflows/paypal-monitor.yml
+! grep -q 'data/new_payments.json' .github/workflows/paypal-monitor.yml
 
 echo "PASS: missing Resend configuration fails safely"
-echo "PASS: payer PII is not persisted in public repository state"
+echo "PASS: payment state is stateless and not persisted in public repo"
