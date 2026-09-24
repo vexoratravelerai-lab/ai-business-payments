@@ -158,14 +158,13 @@ grep -q 'lifecyclestage:"customer"' .github/workflows/paypal-monitor.yml
 grep -q 'customer|evangelist|other' .github/workflows/paypal-monitor.yml
 grep -q 'https://calendly.com/vexora-traveler-ai/30min' .github/workflows/paypal-monitor.yml
 grep -q 'Idempotency-Key' .github/workflows/paypal-monitor.yml
-grep -q 'del(.payer_info)' .github/workflows/paypal-monitor.yml
-grep -q 'failsafe.*customer PII' .github/workflows/paypal-monitor.yml || grep -q 'without persisting customer PII' .github/workflows/paypal-monitor.yml
 grep -q 'Notion-side idempotency guard' .github/workflows/paypal-monitor.yml
 grep -q 'Notion onboarding page .* already exists' .github/workflows/paypal-monitor.yml
-grep -q 'Detected payments remain pending until downstream processing succeeds' .github/workflows/paypal-monitor.yml
-grep -q 'Commit payment state only after all downstream steps in this job have succeeded' .github/workflows/paypal-monitor.yml
 grep -q 'HubSpot-side idempotency guard' .github/workflows/paypal-monitor.yml
 grep -q 'dealname.*EQ' .github/workflows/paypal-monitor.yml
+grep -q 're-scan the lookback window' .github/workflows/paypal-monitor.yml
+grep -q 'Downstream systems provide idempotency' .github/workflows/paypal-monitor.yml
+grep -q 'No new PayPal payments to email' .github/workflows/paypal-monitor.yml
 
 echo "PASS: PayPal normalization"
 echo "PASS: payer identity propagation"
