@@ -5,33 +5,119 @@ on:
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
+concurrency:
+  group: paypal-payment-monitor
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
 jobs:
   check-paypal:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check PayPal transactions
+      - name: Check PayPal Sandbox transactions
         env:
           PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
           PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
-          PAYPAL_ENV: sandbox
-          PAYPAL_LOOKBACK_MINUTES: "15"
-          PAYPAL_MIN_AMOUNT: "0"
-        run: python3 scripts/check_paypal.py
-
-      - name: Save processed transactions
+          PAYPAL_BASE_URL: https://api-m.sandbox.paypal.com
+          LOOKBACK_MINUTES: "15"
+          MIN_AMOUNT: "0"
+        shell: bash
         run: |
-          if git diff --quiet -- data/processed_transactions.json; then
-            echo "No state changes."
-            exit 0
+          set -euo pipefail
+
+          if [ -z "${PAYPAL_CLIENT_ID:-}" ] || [ -z "${PAYPAL_CLIENT_SECRET:-}" ]; then
+            echo "Missing GitHub repository secrets: PAYPAL_CLIENT_ID and/or PAYPAL_CLIENT_SECRET."
+            exit 1
           fi
+
+          mkdir -p data
+          [ -f data/processed_transactions.json ] || printf '[]\n' > data/processed_transactions.json
+
+          echo "Requesting PayPal access token..."
+          TOKEN="$(curl -fsS --retry 3 \
+            -u "$PAYPAL_CLIENT_ID:$PAYPAL_CLIENT_SECRET" \
+            -H "Accept: application/json" \
+            -H "Accept-Language: en_US" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data "grant_type=client_credentials" \
+            "$PAYPAL_BASE_URL/v1/oauth2/token" | jq -r '.access_token')"
+
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "PayPal did not return an access token."
+            exit 1
+          fi
+
+          END_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          START_DATE="$(date -u -d "-${LOOKBACK_MINUTES} minutes" +"%Y-%m-%dT%H:%M:%SZ")"
+
+          echo "Checking PayPal transactions from $START_DATE to $END_DATE..."
+
+          URL="$PAYPAL_BASE_URL/v1/reporting/transactions?start_date=$START_DATE&end_date=$END_DATE&transaction_status=S&page_size=100&page=1"
+
+          curl -fsS --retry 3 \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/json" \
+            -H "PayPal-Enforce-ISO8601-Format: true" \
+            "$URL" > /tmp/paypal-report.json
+
+          jq -e '.transaction_details // []' /tmp/paypal-report.json >/dev/null
+
+          jq '
+            .transaction_details // []
+            | map(.transaction_info // {})
+            | map(select(.transaction_id != null))
+            | map(
+                . + {
+                  amount_value: ((.transaction_amount.value // "0") | tonumber),
+                  amount_currency: (.transaction_amount.currency // null)
+                }
+              )
+            | map(select(.transaction_status == "S"))
+            | map(select(.amount_value >= ${MIN_AMOUNT}))
+          ' /tmp/paypal-report.json > /tmp/payments.json
+
+          BEFORE_COUNT="$(jq 'length' data/processed_transactions.json)"
+          jq --slurpfile processed data/processed_transactions.json '
+            map(select(([($processed[0][])] | index(.transaction_id)) | not))
+          ' /tmp/payments.json > /tmp/new-payments.json
+
+          NEW_COUNT="$(jq 'length' /tmp/new-payments.json)"
+
+          if [ "$NEW_COUNT" -gt 0 ]; then
+            echo "New successful PayPal payments detected: $NEW_COUNT"
+            jq -c '.[]' /tmp/new-payments.json | while IFS= read -r payment; do
+              echo "::notice::New PayPal payment: $(echo "$payment" | jq -r '.transaction_id // "unknown"') $(echo "$payment" | jq -r '.amount_value // 0') $(echo "$payment" | jq -r '.amount_currency // ""')"
+            done
+
+            jq -s --arg now "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" '
+              [ .[0][] | . + {detected_at: $now} ]
+            ' /tmp/new-payments.json > data/new_payments.json
+
+            jq -s '.[0] + .[1] | unique_by(.transaction_id)' data/processed_transactions.json /tmp/new-payments.json > /tmp/processed.json
+            mv /tmp/processed.json data/processed_transactions.json
+          else
+            printf '[]\n' > data/new_payments.json
+            echo "No new successful PayPal payments."
+          fi
+
+          AFTER_COUNT="$(jq 'length' data/processed_transactions.json)"
+          echo "Processed transaction state: $BEFORE_COUNT -> $AFTER_COUNT"
+
+      - name: Save payment state
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/processed_transactions.json
-          git commit -m "chore: update PayPal transaction state"
+          git add data/processed_transactions.json data/new_payments.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: update PayPal payment state"
           git push
