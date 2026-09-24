@@ -142,7 +142,7 @@ jobs:
         if: success()
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          NOTION_PARENT_PAGE_ID: ${{ secrets.NOTION_PARENT_PAGE_ID }}
+          NOTION_PARENT_PAGE_ID: "3e595a6e-025b-817d-95ae-e514b6426c3d"
         shell: bash
         run: |
           set -euo pipefail
