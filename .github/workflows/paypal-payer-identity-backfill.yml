@@ -32,6 +32,7 @@ jobs:
           NOTION_TOKEN: \${{ secrets.NOTION_TOKEN }}
           NOTION_FUNNEL_DATA_SOURCE_ID: "560140e0-2581-4622-9db5-bf48501263fe"
           PAYPAL_BASE_URL: "https://api-m.sandbox.paypal.com"
+          # Capture IDs are not transaction IDs; this workflow intentionally does not call /v2/payments/captures with transaction IDs.
         shell: bash
         run: |
           set -euo pipefail
