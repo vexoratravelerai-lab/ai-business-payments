@@ -1,6 +1,7 @@
 name: PayPal Monitor Logic Test
 
 on:
+  pull_request:
   push:
     branches: [main]
     paths:
