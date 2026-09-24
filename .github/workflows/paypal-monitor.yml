@@ -218,11 +218,106 @@ jobs:
                 ]
               }')"
 
-            STATUS="$(curl -sS --retry 3 -o /tmp/notion-response.json -w "%{http_code}"               -X POST               -H "Authorization: Bearer $NOTION_TOKEN"               -H "Notion-Version: 2022-06-28"               -H "Content-Type: application/json"               --data "$PAYLOAD"               "https://api.notion.com/v1/pages")"
+            STATUS="$(curl -sS --retry 3 -o /tmp/notion-response.json -w "%{http_code}"               -X POST               -H "Authorization: Bearer $NOTION_TOKEN"               -H "Notion-Version: 2025-09-03"               -H "Content-Type: application/json"               --data "$PAYLOAD"               "https://api.notion.com/v1/pages")"
 
             echo "Notion onboarding page for PayPal transaction $TX_ID: HTTP $STATUS"
             if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
               jq . /tmp/notion-response.json 2>/dev/null || cat /tmp/notion-response.json
+              exit 1
+            fi
+          done
+
+      - name: Sync payments to Notion Funnel Tracker
+        if: success()
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_FUNNEL_DATA_SOURCE_ID: "560140e0-2581-4622-9db5-bf48501263fe"
+          CALENDLY_BOOKING_URL: "https://calendly.com/vexora-traveler-ai/30min"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${NOTION_TOKEN:-}" ] || [ -z "${NOTION_FUNNEL_DATA_SOURCE_ID:-}" ]; then
+            echo "Notion Funnel Tracker sync skipped: NOTION_TOKEN or NOTION_FUNNEL_DATA_SOURCE_ID is missing."
+            exit 0
+          fi
+
+          COUNT="$(jq 'length' /tmp/new-payments.json)"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No new PayPal payments to sync to Notion Funnel Tracker."
+            exit 0
+          fi
+
+          jq -c '.[]' /tmp/new-payments.json | while IFS= read -r payment; do
+            TX_ID="$(printf '%s' "$payment" | jq -r '.transaction_id')"
+            AMOUNT="$(printf '%s' "$payment" | jq -r '.amount_value')"
+            CURRENCY="$(printf '%s' "$payment" | jq -r '.transaction_amount.currency_code // "USD"')"
+            PAYER_EMAIL="$(printf '%s' "$payment" | jq -r '.payer_info.email_address // ""')"
+            PAYER_NAME="$(printf '%s' "$payment" | jq -r '.payer_info.payer_name.full_name // ""')"
+            CLIENT_NAME="${PAYER_NAME:-Sandbox/PayPal Customer $TX_ID}"
+            NOTES="Automatic PayPal sync. Amount: ${AMOUNT} ${CURRENCY}. Transaction: ${TX_ID}. Onboarding page is created by the preceding step. This funnel record remains Paid / قيد التنفيذ until onboarding tasks are completed."
+
+            QUERY_PAYLOAD="$(jq -n --arg tx "$TX_ID" '{
+              filter:{
+                property:"Payment ID",
+                rich_text:{equals:$tx}
+              },
+              page_size:1
+            }')"
+
+            QUERY_STATUS="$(curl -sS --retry 3 -o /tmp/notion-funnel-query.json -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: Bearer $NOTION_TOKEN" \
+              -H "Notion-Version: 2025-09-03" \
+              -H "Content-Type: application/json" \
+              --data "$QUERY_PAYLOAD" \
+              "https://api.notion.com/v1/data_sources/$NOTION_FUNNEL_DATA_SOURCE_ID/query")"
+
+            echo "Notion Funnel Tracker lookup for PayPal transaction $TX_ID: HTTP $QUERY_STATUS"
+            if [ "$QUERY_STATUS" -lt 200 ] || [ "$QUERY_STATUS" -ge 300 ]; then
+              jq . /tmp/notion-funnel-query.json 2>/dev/null || cat /tmp/notion-funnel-query.json
+              exit 1
+            fi
+
+            EXISTING_COUNT="$(jq '.results | length' /tmp/notion-funnel-query.json)"
+            if [ "$EXISTING_COUNT" -gt 0 ]; then
+              echo "Notion Funnel Tracker already contains PayPal transaction $TX_ID; skipping duplicate."
+              continue
+            fi
+
+            PROPERTIES="$(jq -n \
+              --arg client "$CLIENT_NAME" \
+              --arg tx "$TX_ID" \
+              --arg notes "$NOTES" \
+              --arg booking "$CALENDLY_BOOKING_URL" \
+              --arg email "$PAYER_EMAIL" \
+              '{
+                Client:{title:[{text:{content:$client}}]},
+                Stage:{select:{name:"Paid"}},
+                Status:{status:{name:"قيد التنفيذ"}},
+                Source:{select:{name:"Other"}},
+                "Payment ID":{rich_text:[{text:{content:$tx}}]},
+                Calendly:{url:$booking},
+                Notes:{rich_text:[{text:{content:$notes}}]}
+              }
+              + (if $email == "" or $email == "null" then {} else {Email:{email:$email}} end)')"
+
+            CREATE_PAYLOAD="$(jq -n \
+              --arg ds "$NOTION_FUNNEL_DATA_SOURCE_ID" \
+              --argjson props "$PROPERTIES" \
+              '{parent:{type:"data_source_id",data_source_id:$ds},properties:$props}')"
+
+            CREATE_STATUS="$(curl -sS --retry 3 -o /tmp/notion-funnel-create.json -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: Bearer $NOTION_TOKEN" \
+              -H "Notion-Version: 2025-09-03" \
+              -H "Content-Type: application/json" \
+              --data "$CREATE_PAYLOAD" \
+              "https://api.notion.com/v1/pages")"
+
+            echo "Notion Funnel Tracker create for PayPal transaction $TX_ID: HTTP $CREATE_STATUS"
+            if [ "$CREATE_STATUS" -lt 200 ] || [ "$CREATE_STATUS" -ge 300 ]; then
+              jq . /tmp/notion-funnel-create.json 2>/dev/null || cat /tmp/notion-funnel-create.json
               exit 1
             fi
           done
