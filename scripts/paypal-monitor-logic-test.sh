@@ -158,6 +158,8 @@ grep -q 'lifecyclestage:"customer"' .github/workflows/paypal-monitor.yml
 grep -q 'customer|evangelist|other' .github/workflows/paypal-monitor.yml
 grep -q 'https://calendly.com/vexora-traveler-ai/30min' .github/workflows/paypal-monitor.yml
 grep -q 'Idempotency-Key' .github/workflows/paypal-monitor.yml
+grep -q 'del(.payer_info)' .github/workflows/paypal-monitor.yml
+grep -q 'failsafe.*customer PII' .github/workflows/paypal-monitor.yml || grep -q 'without persisting customer PII' .github/workflows/paypal-monitor.yml
 grep -q 'Notion-side idempotency guard' .github/workflows/paypal-monitor.yml
 grep -q 'Notion onboarding page .* already exists' .github/workflows/paypal-monitor.yml
 grep -q 'Detected payments remain pending until downstream processing succeeds' .github/workflows/paypal-monitor.yml
@@ -190,7 +192,7 @@ grep -q 'pending_welcome_emails.json' .github/workflows/paypal-monitor.yml
 grep -q 'Welcome email .* queued' .github/workflows/paypal-monitor.yml
 grep -q 'Retry Pending Welcome Emails' .github/workflows/retry-pending-welcome-emails.yml
 grep -q 'paypal-$TX_ID-welcome-v1' .github/workflows/retry-pending-welcome-emails.yml
-grep -q 'git add data/processed_transactions.json data/new_payments.json data/pending_welcome_emails.json' .github/workflows/paypal-monitor.yml
+grep -q 'git add data/processed_transactions.json data/new_payments.json' .github/workflows/paypal-monitor.yml
 
 echo "PASS: no-domain pending email queue"
 echo "PASS: pending queue retry workflow"
