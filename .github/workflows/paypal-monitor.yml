@@ -1,6 +1,10 @@
 name: PayPal Payment Monitor
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/paypal-monitor.yml"
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
@@ -26,7 +30,7 @@ jobs:
           PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
           PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
           PAYPAL_BASE_URL: https://api-m.sandbox.paypal.com
-          LOOKBACK_MINUTES: "15"
+          LOOKBACK_MINUTES: "1440"
           MIN_AMOUNT: "0"
         shell: bash
         run: |
@@ -73,12 +77,10 @@ jobs:
             .transaction_details // []
             | map(.transaction_info // {})
             | map(select(.transaction_id != null))
-            | map(
-                . + {
-                  amount_value: ((.transaction_amount.value // "0") | tonumber),
-                  amount_currency: (.transaction_amount.currency // null)
-                }
-              )
+            | map(. + {
+                amount_value: ((.transaction_amount.value // "0") | tonumber),
+                amount_currency: (.transaction_amount.currency // null)
+              })
             | map(select(.transaction_status == "S"))
             | map(select(.amount_value >= $min_amount))
           ' /tmp/paypal-report.json > /tmp/payments.json
