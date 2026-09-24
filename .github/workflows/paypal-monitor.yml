@@ -1,6 +1,4 @@
 name: PayPal Payment Monitor
-# manual smoke-test trigger
-# manual smoke-test trigger 3
 
 on:
   push:
@@ -16,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   check-paypal:
@@ -27,11 +25,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check PayPal Sandbox transactions
+      - name: Check PayPal transactions
         env:
           PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
           PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
-          PAYPAL_BASE_URL: https://api-m.sandbox.paypal.com
+          PAYPAL_ENVIRONMENT: ${{ secrets.PAYPAL_ENVIRONMENT }}
           LOOKBACK_MINUTES: "1440"
           MIN_AMOUNT: "0"
         shell: bash
@@ -43,6 +41,14 @@ jobs:
             exit 1
           fi
 
+          PAYPAL_ENVIRONMENT="${PAYPAL_ENVIRONMENT:-sandbox}"
+          case "$PAYPAL_ENVIRONMENT" in
+            sandbox) PAYPAL_BASE_URL="https://api-m.sandbox.paypal.com" ;;
+            live) PAYPAL_BASE_URL="https://api-m.paypal.com" ;;
+            *) echo "Invalid PAYPAL_ENVIRONMENT=$PAYPAL_ENVIRONMENT. Use sandbox or live."; exit 1 ;;
+          esac
+
+          echo "PayPal environment: $PAYPAL_ENVIRONMENT"
           echo "Requesting PayPal access token..."
           TOKEN_RESPONSE="$(curl -sS --retry 3 -u "$PAYPAL_CLIENT_ID:$PAYPAL_CLIENT_SECRET" -H "Accept: application/json" -H "Accept-Language: en_US" -H "Content-Type: application/x-www-form-urlencoded" --data "grant_type=client_credentials" "$PAYPAL_BASE_URL/v1/oauth2/token")"
           TOKEN="$(printf '%s' "$TOKEN_RESPONSE" | jq -r '.access_token')"
@@ -373,6 +379,7 @@ jobs:
 
       - name: Send welcome email with Resend
         if: success()
+        continue-on-error: true
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_FROM_ADDRESS: ${{ secrets.RESEND_FROM_ADDRESS }}
@@ -387,7 +394,7 @@ jobs:
           fi
 
           if [ -z "${RESEND_API_KEY:-}" ] || [ -z "${RESEND_FROM_ADDRESS:-}" ]; then
-            echo "Resend sender configuration is not ready; skipping welcome-email delivery for this run. Payment processing is complete and the email will be retried on a later run after sender configuration is added."
+            echo "Resend is optional in First Sale Mode; payment processing does not depend on email delivery."
             exit 0
           fi
 
@@ -397,7 +404,7 @@ jobs:
             PAYER_NAME="$(printf '%s' "$payment" | jq -r '.payer_info.payer_name.full_name // ""')"
 
             if [ -z "$PAYER_EMAIL" ] || [ "$PAYER_EMAIL" = "null" ]; then
-              echo "No payer email for PayPal transaction $TX_ID; payment metadata remains contactless."
+              echo "No payer email for PayPal transaction $TX_ID; skipping automatic email."
               continue
             fi
 
