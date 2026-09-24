@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "paypal_account_id": "T9AH8TNFRM7FC",
+    "transaction_id": "5M375222Y8656821D",
+    "paypal_reference_id": "674153482X111345J",
+    "paypal_reference_id_type": "TXN",
+    "transaction_event_code": "T0006",
+    "transaction_initiation_date": "2026-09-24T13:08:01+00:00",
+    "transaction_updated_date": "2026-09-24T13:08:01+00:00",
+    "transaction_amount": {
+      "currency_code": "USD",
+      "value": "10.00"
+    },
+    "fee_amount": {
+      "currency_code": "USD",
+      "value": "-0.79"
+    },
+    "transaction_status": "S",
+    "protection_eligibility": "01",
+    "instrument_type": "PayPal",
+    "instrument_sub_type": "PayPal Wallet",
+    "payer_info": null,
+    "amount_value": 10.00,
+    "amount_currency": null,
+    "detected_at": "2026-09-24T14:58:32Z"
+  }
+]
