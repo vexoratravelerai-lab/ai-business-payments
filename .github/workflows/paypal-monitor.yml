@@ -98,8 +98,7 @@ jobs:
 
           if [ "$NEW_COUNT" -gt 0 ]; then
             jq -s --arg now "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" '.[0] | map(. + {detected_at: $now})' /tmp/new-payments.json > data/new_payments.json
-            jq -s '.[0] + .[1] | unique_by(.transaction_id)' data/processed_transactions.json /tmp/new-payments.json > /tmp/processed.json
-            mv /tmp/processed.json data/processed_transactions.json
+            echo "Detected payments remain pending until downstream processing succeeds."
           else
             printf '[]\n' > data/new_payments.json
           fi
@@ -421,6 +420,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Commit payment state only after all downstream steps in this job have succeeded.
+          if [ "$(jq 'length' /tmp/new-payments.json)" -gt 0 ]; then
+            jq -s '.[0] + .[1] | unique_by(.transaction_id)' data/processed_transactions.json /tmp/new-payments.json > /tmp/processed.json
+            mv /tmp/processed.json data/processed_transactions.json
+          fi
+
           git add data/processed_transactions.json data/new_payments.json data/pending_welcome_emails.json
           if git diff --cached --quiet; then
             echo "No changes to commit."
