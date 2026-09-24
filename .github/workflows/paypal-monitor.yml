@@ -45,30 +45,14 @@ jobs:
           [ -f data/processed_transactions.json ] || printf '[]\n' > data/processed_transactions.json
 
           echo "Requesting PayPal access token..."
-          TOKEN_RESPONSE="$(curl -sS --retry 3 \
-            -u "$PAYPAL_CLIENT_ID:$PAYPAL_CLIENT_SECRET" \
-            -H "Accept: application/json" \
-            -H "Accept-Language: en_US" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            --data "grant_type=client_credentials" \
-            "$PAYPAL_BASE_URL/v1/oauth2/token")"
+          TOKEN_RESPONSE="$(curl -sS --retry 3 -u "$PAYPAL_CLIENT_ID:$PAYPAL_CLIENT_SECRET" -H "Accept: application/json" -H "Accept-Language: en_US" -H "Content-Type: application/x-www-form-urlencoded" --data "grant_type=client_credentials" "$PAYPAL_BASE_URL/v1/oauth2/token")"
           TOKEN="$(printf '%s' "$TOKEN_RESPONSE" | jq -r '.access_token')"
           echo "PayPal token scopes before refresh: $(printf '%s' "$TOKEN_RESPONSE" | jq -r '.scope // "not returned"')"
 
           echo "Refreshing PayPal OAuth token cache so newly enabled app permissions are applied..."
-          curl -sS --retry 3 \
-            -u "$PAYPAL_CLIENT_ID:$PAYPAL_CLIENT_SECRET" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            --data-urlencode "token=$TOKEN" \
-            "$PAYPAL_BASE_URL/v1/oauth2/token/terminate" >/tmp/paypal-token-terminate.json || true
+          curl -sS --retry 3 -u "$PAYPAL_CLIENT_ID:$PAYPAL_CLIENT_SECRET" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "token=$TOKEN" "$PAYPAL_BASE_URL/v1/oauth2/token/terminate" >/tmp/paypal-token-terminate.json || true
 
-          TOKEN_RESPONSE="$(curl -sS --retry 3 \
-            -u "$PAYPAL_CLIENT_ID:$PAYPAL_CLIENT_SECRET" \
-            -H "Accept: application/json" \
-            -H "Accept-Language: en_US" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            --data "grant_type=client_credentials" \
-            "$PAYPAL_BASE_URL/v1/oauth2/token")"
+          TOKEN_RESPONSE="$(curl -sS --retry 3 -u "$PAYPAL_CLIENT_ID:$PAYPAL_CLIENT_SECRET" -H "Accept: application/json" -H "Accept-Language: en_US" -H "Content-Type: application/x-www-form-urlencoded" --data "grant_type=client_credentials" "$PAYPAL_BASE_URL/v1/oauth2/token")"
           TOKEN="$(printf '%s' "$TOKEN_RESPONSE" | jq -r '.access_token')"
           echo "PayPal token scopes after refresh: $(printf '%s' "$TOKEN_RESPONSE" | jq -r '.scope // "not returned"')"
 
@@ -79,59 +63,37 @@ jobs:
 
           END_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           START_DATE="$(date -u -d "-${LOOKBACK_MINUTES} minutes" +"%Y-%m-%dT%H:%M:%SZ")"
-
           echo "Checking PayPal transactions from $START_DATE to $END_DATE..."
 
           URL="$PAYPAL_BASE_URL/v1/reporting/transactions?start_date=$START_DATE&end_date=$END_DATE&transaction_status=S&page_size=100&page=1"
-
-          HTTP_STATUS="$(curl -sS --retry 3 -o /tmp/paypal-report.json -w "%{http_code}" \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Accept: application/json" \
-            -H "PayPal-Enforce-ISO8601-Format: true" \
-            "$URL")"
+          HTTP_STATUS="$(curl -sS --retry 3 -o /tmp/paypal-report.json -w "%{http_code}" -H "Authorization: Bearer $TOKEN" -H "Accept: application/json" -H "PayPal-Enforce-ISO8601-Format: true" "$URL")"
           echo "PayPal Transaction Reporting HTTP status: $HTTP_STATUS"
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "PayPal response:"
             jq . /tmp/paypal-report.json 2>/dev/null || cat /tmp/paypal-report.json
             exit 1
           fi
 
           jq -e '.transaction_details // []' /tmp/paypal-report.json >/dev/null
-
           jq --argjson min_amount "$MIN_AMOUNT" '
             .transaction_details // []
             | map(.transaction_info // {})
             | map(select(.transaction_id != null))
-            | map(. + {
-                amount_value: ((.transaction_amount.value // "0") | tonumber),
-                amount_currency: (.transaction_amount.currency // null)
-              })
+            | map(. + {amount_value: ((.transaction_amount.value // "0") | tonumber), amount_currency: (.transaction_amount.currency // null)})
             | map(select(.transaction_status == "S"))
             | map(select(.transaction_event_code != "T1900"))
             | map(select(.amount_value >= $min_amount))
           ' /tmp/paypal-report.json > /tmp/payments.json
 
           jq --slurpfile current data/processed_transactions.json '
-            map(
-              select(
-                .transaction_id as $id
-                | ([$current[0][]?.transaction_id] | index($id)) == null
-              )
-            )
+            map(select(.transaction_id as $id | ([$current[0][]?.transaction_id] | index($id)) == null))
           ' /tmp/payments.json > /tmp/new-payments.json
 
           NEW_COUNT="$(jq 'length' /tmp/new-payments.json)"
           echo "New successful PayPal payments detected: $NEW_COUNT"
 
           if [ "$NEW_COUNT" -gt 0 ]; then
-            jq -s --arg now "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" '
-              .[0] | map(. + {detected_at: $now})
-            ' /tmp/new-payments.json > data/new_payments.json
-
-            jq -s '
-              .[0] + .[1]
-              | unique_by(.transaction_id)
-            ' data/processed_transactions.json /tmp/new-payments.json > /tmp/processed.json
+            jq -s --arg now "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" '.[0] | map(. + {detected_at: $now})' /tmp/new-payments.json > data/new_payments.json
+            jq -s '.[0] + .[1] | unique_by(.transaction_id)' data/processed_transactions.json /tmp/new-payments.json > /tmp/processed.json
             mv /tmp/processed.json data/processed_transactions.json
           else
             printf '[]\n' > data/new_payments.json
@@ -165,26 +127,63 @@ jobs:
             SUBJECT="$(printf '%s' "$payment" | jq -r '.transaction_subject // "PayPal payment"')"
             ACCOUNT_ID="$(printf '%s' "$payment" | jq -r '.paypal_account_id // ""')"
 
-            PAYLOAD="$(jq -n \
-              --arg name "PayPal Payment $TX_ID" \
-              --arg amount "$AMOUNT" \
-              --arg currency "$CURRENCY" \
-              --arg subject "$SUBJECT" \
-              --arg tx "$TX_ID" \
-              --arg account "$ACCOUNT_ID" \
-              '{properties:{dealname:$name,amount:$amount,description:("PayPal transaction: "+$tx+" | Currency: "+$currency+" | Subject: "+$subject+" | PayPal account: "+$account)}}')"
+            PAYLOAD="$(jq -n --arg name "PayPal Payment $TX_ID" --arg amount "$AMOUNT" --arg currency "$CURRENCY" --arg subject "$SUBJECT" --arg tx "$TX_ID" --arg account "$ACCOUNT_ID" '{properties:{dealname:$name,amount:$amount,description:("PayPal transaction: "+$tx+" | Currency: "+$currency+" | Subject: "+$subject+" | PayPal account: "+$account)}}')"
 
-            STATUS="$(curl -sS --retry 3 -o /tmp/hubspot-response.json -w "%{http_code}" \
-              -X POST \
-              -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY" \
-              -H "Content-Type: application/json" \
-              --data "$PAYLOAD" \
-              "https://api.hubapi.com/crm/v3/objects/deals")"
+            STATUS="$(curl -sS --retry 3 -o /tmp/hubspot-response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY" -H "Content-Type: application/json" --data "$PAYLOAD" "https://api.hubapi.com/crm/v3/objects/deals")"
 
             echo "HubSpot deal creation for PayPal transaction $TX_ID: HTTP $STATUS"
             if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
-              echo "HubSpot response:"
               jq . /tmp/hubspot-response.json 2>/dev/null || cat /tmp/hubspot-response.json
+              exit 1
+            fi
+          done
+
+      - name: Create Notion onboarding pages
+        if: success()
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_PARENT_PAGE_ID: ${{ secrets.NOTION_PARENT_PAGE_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${NOTION_TOKEN:-}" ] || [ -z "${NOTION_PARENT_PAGE_ID:-}" ]; then
+            echo "Notion onboarding is prepared but not activated yet: add NOTION_TOKEN and NOTION_PARENT_PAGE_ID GitHub secrets."
+            exit 0
+          fi
+
+          COUNT="$(jq 'length' /tmp/new-payments.json)"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No new PayPal payments to create in Notion."
+            exit 0
+          fi
+
+          jq -c '.[]' /tmp/new-payments.json | while IFS= read -r payment; do
+            TX_ID="$(printf '%s' "$payment" | jq -r '.transaction_id')"
+            AMOUNT="$(printf '%s' "$payment" | jq -r '.amount_value')"
+            CURRENCY="$(printf '%s' "$payment" | jq -r '.transaction_amount.currency_code // "USD"')"
+            SUBJECT="$(printf '%s' "$payment" | jq -r '.transaction_subject // "PayPal payment"')"
+
+            PAYLOAD="$(jq -n               --arg parent "$NOTION_PARENT_PAGE_ID"               --arg title "Client Onboarding — PayPal $TX_ID"               --arg tx "$TX_ID"               --arg amount "$AMOUNT"               --arg currency "$CURRENCY"               --arg subject "$SUBJECT"               '{
+                parent:{page_id:$parent},
+                properties:{title:{title:[{text:{content:$title}}]}},
+                children:[
+                  {object:"block",type:"heading_2",heading_2:{rich_text:[{type:"text",text:{content:"Payment"}}]}},
+                  {object:"block",type:"paragraph",paragraph:{rich_text:[{type:"text",text:{content:("Status: Paid | PayPal transaction: "+$tx+" | Amount: "+$amount+" "+$currency)}}]}},
+                  {object:"block",type:"paragraph",paragraph:{rich_text:[{type:"text",text:{content:("Subject: "+$subject)}}]}},
+                  {object:"block",type:"heading_2",heading_2:{rich_text:[{type:"text",text:{content:"Onboarding"}}]}},
+                  {object:"block",type:"to_do",to_do:{rich_text:[{type:"text",text:{content:"Confirm customer information"}}],checked:false}},
+                  {object:"block",type:"to_do",to_do:{rich_text:[{type:"text",text:{content:"Schedule onboarding meeting"}}],checked:false}},
+                  {object:"block",type:"to_do",to_do:{rich_text:[{type:"text",text:{content:"Start automation setup"}}],checked:false}},
+                  {object:"block",type:"to_do",to_do:{rich_text:[{type:"text",text:{content:"Test first workflow"}}],checked:false}}
+                ]
+              }')"
+
+            STATUS="$(curl -sS --retry 3 -o /tmp/notion-response.json -w "%{http_code}"               -X POST               -H "Authorization: Bearer $NOTION_TOKEN"               -H "Notion-Version: 2022-06-28"               -H "Content-Type: application/json"               --data "$PAYLOAD"               "https://api.notion.com/v1/pages")"
+
+            echo "Notion onboarding page for PayPal transaction $TX_ID: HTTP $STATUS"
+            if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
+              jq . /tmp/notion-response.json 2>/dev/null || cat /tmp/notion-response.json
               exit 1
             fi
           done
