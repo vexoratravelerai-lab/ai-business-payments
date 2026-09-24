@@ -158,13 +158,21 @@ jobs:
               CONTACT_ID="$(jq -r '.results[0].id // ""' /tmp/hubspot-contact-search.json)"
 
               if [ -z "$CONTACT_ID" ]; then
-                CONTACT_PAYLOAD="$(jq -n --arg email "$PAYER_EMAIL" --arg name "$PAYER_NAME" '{properties:{email:$email,firstname:(if $name == "" then null else ($name | split(" ")[0]) end),lastname:(if $name == "" then null else (($name | split(" ") | .[1:] | join(" "))) end)}} | walk(if type == "object" then with_entries(select(.value != null)) else . end)')"
+                CONTACT_PAYLOAD="$(jq -n --arg email "$PAYER_EMAIL" --arg name "$PAYER_NAME" '{properties:{email:$email,lifecyclestage:"customer",firstname:(if $name == "" then null else ($name | split(" ")[0]) end),lastname:(if $name == "" then null else (($name | split(" ") | .[1:] | join(" "))) end)}} | walk(if type == "object" then with_entries(select(.value != null)) else . end)')"
                 CONTACT_STATUS="$(curl -sS --retry 3 -o /tmp/hubspot-contact-response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY" -H "Content-Type: application/json" --data "$CONTACT_PAYLOAD" "https://api.hubapi.com/crm/v3/objects/contacts")"
                 if [ "$CONTACT_STATUS" -lt 200 ] || [ "$CONTACT_STATUS" -ge 300 ]; then
                   jq . /tmp/hubspot-contact-response.json 2>/dev/null || cat /tmp/hubspot-contact-response.json
                   exit 1
                 fi
                 CONTACT_ID="$(jq -r '.id' /tmp/hubspot-contact-response.json)"
+              fi
+
+              CONTACT_UPDATE_PAYLOAD='{"properties":{"lifecyclestage":"customer"}}'
+              CONTACT_UPDATE_STATUS="$(curl -sS --retry 3 -o /tmp/hubspot-contact-update.json -w "%{http_code}" -X PATCH -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY" -H "Content-Type: application/json" --data "$CONTACT_UPDATE_PAYLOAD" "https://api.hubapi.com/crm/v3/objects/contacts/$CONTACT_ID")"
+              echo "HubSpot contact lifecycle update for PayPal transaction $TX_ID: HTTP $CONTACT_UPDATE_STATUS"
+              if [ "$CONTACT_UPDATE_STATUS" -lt 200 ] || [ "$CONTACT_UPDATE_STATUS" -ge 300 ]; then
+                jq . /tmp/hubspot-contact-update.json 2>/dev/null || cat /tmp/hubspot-contact-update.json
+                exit 1
               fi
 
               ASSOC_STATUS="$(curl -sS --retry 3 -o /tmp/hubspot-association-response.json -w "%{http_code}" -X PUT -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY" -H "Content-Type: application/json" "https://api.hubapi.com/crm/v4/objects/deals/$DEAL_ID/associations/contacts/$CONTACT_ID/3")"
