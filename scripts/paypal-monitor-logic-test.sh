@@ -164,7 +164,7 @@ grep -q 'HubSpot-side idempotency guard' .github/workflows/paypal-monitor.yml
 grep -q 'dealname.*EQ' .github/workflows/paypal-monitor.yml
 grep -q 're-scan the lookback window' .github/workflows/paypal-monitor.yml
 grep -q 'Downstream systems provide idempotency' .github/workflows/paypal-monitor.yml
-grep -q 'No new PayPal payments to email' .github/workflows/paypal-monitor.yml
+grep -q 'No PayPal payments to email' .github/workflows/paypal-monitor.yml
 
 echo "PASS: PayPal normalization"
 echo "PASS: payer identity propagation"
@@ -175,8 +175,9 @@ echo "PASS: Idempotency key"
 echo "PASS: production workflow invariants"
 
 # Verify that missing Resend configuration fails safely without writing payment state to GitHub.
-grep -q 'Resend sender configuration is not ready; skipping welcome-email delivery' .github/workflows/paypal-monitor.yml
+grep -q 'Resend is optional in First Sale Mode; payment processing does not depend on email delivery.' .github/workflows/paypal-monitor.yml
 grep -q 'Downstream systems provide idempotency' .github/workflows/paypal-monitor.yml
+grep -q 'contents: read' .github/workflows/paypal-monitor.yml
 ! grep -q 'data/processed_transactions.json' .github/workflows/paypal-monitor.yml
 ! grep -q 'data/new_payments.json' .github/workflows/paypal-monitor.yml
 
