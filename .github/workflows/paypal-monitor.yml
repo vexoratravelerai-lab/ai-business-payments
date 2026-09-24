@@ -237,7 +237,23 @@ jobs:
             SUBJECT="$(printf '%s' "$payment" | jq -r '.transaction_subject // "PayPal payment"')"
             PAYER_EMAIL="$(printf '%s' "$payment" | jq -r '.payer_info.email_address // ""')"
 
-            PAYLOAD="$(jq -n               --arg parent "$NOTION_PARENT_PAGE_ID"               --arg title "Client Onboarding — PayPal $TX_ID"               --arg tx "$TX_ID"               --arg amount "$AMOUNT"               --arg currency "$CURRENCY"               --arg subject "$SUBJECT"               --arg email "$PAYER_EMAIL"               '{
+            # Notion-side idempotency guard: search by the unique PayPal transaction title before creating a page.
+            PAGE_TITLE="Client Onboarding — PayPal $TX_ID"
+            SEARCH_PAYLOAD="$(jq -n --arg q "$PAGE_TITLE" '{query:$q,page_size:1,filter:{property:"object",value:"page"}}')"
+            SEARCH_STATUS="$(curl -sS --retry 3 -o /tmp/notion-search.json -w "%{http_code}"               -X POST               -H "Authorization: Bearer $NOTION_TOKEN"               -H "Notion-Version: 2025-09-03"               -H "Content-Type: application/json"               --data "$SEARCH_PAYLOAD"               "https://api.notion.com/v1/search")"
+
+            if [ "$SEARCH_STATUS" != "200" ]; then
+              jq . /tmp/notion-search.json 2>/dev/null || cat /tmp/notion-search.json
+              exit 1
+            fi
+
+            EXISTING_PAGE_ID="$(jq -r '.results[0].id // ""' /tmp/notion-search.json)"
+            if [ -n "$EXISTING_PAGE_ID" ]; then
+              echo "Notion onboarding page for PayPal transaction $TX_ID already exists; skipping duplicate."
+              continue
+            fi
+
+                        PAYLOAD="$(jq -n               --arg parent "$NOTION_PARENT_PAGE_ID"               --arg title "$PAGE_TITLE"               --arg tx "$TX_ID"               --arg amount "$AMOUNT"               --arg currency "$CURRENCY"               --arg subject "$SUBJECT"               --arg email "$PAYER_EMAIL"               '{
                 parent:{page_id:$parent},
                 properties:{title:{title:[{text:{content:$title}}]}},
                 children:[
