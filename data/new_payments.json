@@ -1,1 +1,77 @@
-[]
+[
+  {
+    "paypal_account_id": "T9AH8TNFRM7FC",
+    "transaction_id": "3HP70294EY8006812",
+    "paypal_reference_id": "74J721988S954940X",
+    "paypal_reference_id_type": "TXN",
+    "transaction_event_code": "T0006",
+    "transaction_initiation_date": "2026-09-24T13:55:20+00:00",
+    "transaction_updated_date": "2026-09-24T13:55:20+00:00",
+    "transaction_amount": {
+      "currency_code": "USD",
+      "value": "10.00"
+    },
+    "fee_amount": {
+      "currency_code": "USD",
+      "value": "-0.79"
+    },
+    "transaction_status": "S",
+    "protection_eligibility": "02",
+    "instrument_type": "PayPal",
+    "instrument_sub_type": "PayPal Wallet",
+    "payer_info": null,
+    "amount_value": 10.00,
+    "amount_currency": null,
+    "detected_at": "2026-09-24T15:33:57Z"
+  },
+  {
+    "paypal_account_id": "T9AH8TNFRM7FC",
+    "transaction_id": "01864464SX299572G",
+    "paypal_reference_id": "7HG69733N5887005T",
+    "paypal_reference_id_type": "TXN",
+    "transaction_event_code": "T0006",
+    "transaction_initiation_date": "2026-09-24T13:57:17+00:00",
+    "transaction_updated_date": "2026-09-24T13:57:17+00:00",
+    "transaction_amount": {
+      "currency_code": "USD",
+      "value": "10.00"
+    },
+    "fee_amount": {
+      "currency_code": "USD",
+      "value": "-0.79"
+    },
+    "transaction_status": "S",
+    "protection_eligibility": "02",
+    "instrument_type": "PayPal",
+    "instrument_sub_type": "PayPal Wallet",
+    "payer_info": null,
+    "amount_value": 10.00,
+    "amount_currency": null,
+    "detected_at": "2026-09-24T15:33:57Z"
+  },
+  {
+    "paypal_account_id": "T9AH8TNFRM7FC",
+    "transaction_id": "4HC882535T9476708",
+    "paypal_reference_id": "7702340695721742B",
+    "paypal_reference_id_type": "TXN",
+    "transaction_event_code": "T0006",
+    "transaction_initiation_date": "2026-09-24T13:57:49+00:00",
+    "transaction_updated_date": "2026-09-24T13:57:49+00:00",
+    "transaction_amount": {
+      "currency_code": "USD",
+      "value": "10.00"
+    },
+    "fee_amount": {
+      "currency_code": "USD",
+      "value": "-0.79"
+    },
+    "transaction_status": "S",
+    "protection_eligibility": "02",
+    "instrument_type": "PayPal",
+    "instrument_sub_type": "PayPal Wallet",
+    "payer_info": null,
+    "amount_value": 10.00,
+    "amount_currency": null,
+    "detected_at": "2026-09-24T15:33:57Z"
+  }
+]
