@@ -14,7 +14,7 @@ Email automation is optional during the first-sale phase. A customer can be hand
 
 ## Cloud payment monitor
 
-GitHub Actions checks PayPal every 5 minutes.
+GitHub Actions checks PayPal every 30 minutes in the cost-safe first-sale configuration. A manual workflow run is also available when an immediate check is needed.
 
 The monitor:
 
