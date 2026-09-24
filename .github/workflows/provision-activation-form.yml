@@ -1,0 +1,124 @@
+name: Provision HubSpot Client Activation Form
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/provision-activation-form.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Provision HubSpot form
+        env:
+          HUBSPOT_SERVICE_KEY: ${{ secrets.HUBSPOT_SERVICE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${HUBSPOT_SERVICE_KEY:-}" ]; then
+            echo "Missing HUBSPOT_SERVICE_KEY."
+            exit 1
+          fi
+
+          FORM_NAME="Vexora AI — Client Activation"
+          LIST_STATUS="$(curl -sS --retry 3 -o /tmp/forms.json -w "%{http_code}"             -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY"             -H "Accept: application/json"             "https://api.hubapi.com/marketing/v3/forms?limit=100")"
+
+          echo "HubSpot forms lookup HTTP $LIST_STATUS"
+          if [ "$LIST_STATUS" != "200" ]; then
+            cat /tmp/forms.json
+            exit 1
+          fi
+
+          FORM_ID="$(jq -r --arg n "$FORM_NAME" '.results[] | select(.name == $n and .archived == false) | .id' /tmp/forms.json | head -n1)"
+
+          if [ -z "$FORM_ID" ]; then
+            PAYLOAD="$(jq -n --arg name "$FORM_NAME" '{
+              archived:false,
+              configuration:{
+                allowLinkToResetKnownValues:true,
+                archivable:true,
+                cloneable:true,
+                createNewContactForNewEmail:true,
+                editable:true,
+                language:"en",
+                lifecycleStages:[
+                  {objectTypeId:"0-1",value:"customer"},
+                  {objectTypeId:"0-2",value:"customer"}
+                ],
+                prePopulateKnownValues:true,
+                recaptchaEnabled:true,
+                embedType:"V3"
+              },
+              displayOptions:{
+                renderRawHtml:false,
+                submitButtonText:"Start activation",
+                theme:"canvas",
+                cssClass:""
+              },
+              fieldGroups:[
+                {
+                  groupType:"default_group",
+                  fields:[
+                    {fieldType:"text",label:"First name",name:"firstname",objectTypeId:"0-1",required:true,placeholder:"First name"},
+                    {fieldType:"text",label:"Last name",name:"lastname",objectTypeId:"0-1",required:false,placeholder:"Last name"},
+                    {fieldType:"email",label:"Work email",name:"email",objectTypeId:"0-1",required:true,placeholder:"name@company.com"},
+                    {fieldType:"text",label:"Company",name:"company",objectTypeId:"0-1",required:true,placeholder:"Company name"},
+                    {fieldType:"text",label:"Website",name:"website",objectTypeId:"0-1",required:true,placeholder:"https://example.com"},
+                    {fieldType:"phone",label:"Phone",name:"phone",objectTypeId:"0-1",required:false,placeholder:"+1 ..."},
+                    {fieldType:"text",label:"Job title",name:"jobtitle",objectTypeId:"0-1",required:false,placeholder:"Owner / Manager"}
+                  ]
+                }
+              ],
+              formType:"hubspot",
+              legalConsentOptions:{type:"none"},
+              name:$name
+            }')"
+
+            CREATE_STATUS="$(curl -sS --retry 3 -o /tmp/form-create.json -w "%{http_code}"               -X POST               -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY"               -H "Content-Type: application/json"               --data "$PAYLOAD"               "https://api.hubapi.com/marketing/v3/forms")"
+
+            echo "HubSpot form creation HTTP $CREATE_STATUS"
+            if [ "$CREATE_STATUS" -lt 200 ] || [ "$CREATE_STATUS" -ge 300 ]; then
+              cat /tmp/form-create.json
+              exit 1
+            fi
+
+            FORM_ID="$(jq -r '.id // empty' /tmp/form-create.json)"
+          fi
+
+          if [ -z "$FORM_ID" ]; then
+            echo "HubSpot activation form ID was not found or created."
+            exit 1
+          fi
+
+          NOW="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          cat > /tmp/activation-form.json <<EOF
+          {
+            "name": "$FORM_NAME",
+            "formId": "$FORM_ID",
+            "provisionedAt": "$NOW",
+            "submissionEndpoint": "https://api.hsforms.com/submissions/v3/integration/submit/149402759/$FORM_ID"
+          }
+          EOF
+
+          SHA="$(curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/$REPO/contents/config/hubspot-activation-form.json" | jq -r '.sha // empty')"
+
+          CONTENT_B64="$(base64 -w0 /tmp/activation-form.json)"
+          if [ -n "$SHA" ]; then
+            METHOD=PUT
+            BODY="$(jq -n --arg message "chore: record HubSpot activation form" --arg content "$CONTENT_B64" --arg sha "$SHA" '{message:$message,content:$content,sha:$sha,branch:"main"}')"
+          else
+            METHOD=PUT
+            BODY="$(jq -n --arg message "chore: record HubSpot activation form" --arg content "$CONTENT_B64" '{message:$message,content:$content,branch:"main"}')"
+          fi
+
+          curl -sS --fail-with-body -X $METHOD             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "Content-Type: application/json"             --data "$BODY"             "https://api.github.com/repos/$REPO/contents/config/hubspot-activation-form.json"
+
+          echo "HubSpot activation form ready: $FORM_ID"
