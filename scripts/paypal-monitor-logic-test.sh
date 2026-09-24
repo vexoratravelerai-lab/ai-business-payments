@@ -184,6 +184,7 @@ grep -q 'pending_welcome_emails.json' .github/workflows/paypal-monitor.yml
 grep -q 'Welcome email .* queued' .github/workflows/paypal-monitor.yml
 grep -q 'Retry Pending Welcome Emails' .github/workflows/retry-pending-welcome-emails.yml
 grep -q 'paypal-$TX_ID-welcome-v1' .github/workflows/retry-pending-welcome-emails.yml
+grep -q 'git add data/processed_transactions.json data/new_payments.json data/pending_welcome_emails.json' .github/workflows/paypal-monitor.yml
 
 echo "PASS: no-domain pending email queue"
 echo "PASS: pending queue retry workflow"
