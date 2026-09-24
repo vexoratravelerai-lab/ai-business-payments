@@ -45,13 +45,15 @@ jobs:
           [ -f data/processed_transactions.json ] || printf '[]\n' > data/processed_transactions.json
 
           echo "Requesting PayPal access token..."
-          TOKEN="$(curl -fsS --retry 3 \
+          TOKEN_RESPONSE="$(curl -sS --retry 3 \
             -u "$PAYPAL_CLIENT_ID:$PAYPAL_CLIENT_SECRET" \
             -H "Accept: application/json" \
             -H "Accept-Language: en_US" \
             -H "Content-Type: application/x-www-form-urlencoded" \
             --data "grant_type=client_credentials" \
-            "$PAYPAL_BASE_URL/v1/oauth2/token" | jq -r '.access_token')"
+            "$PAYPAL_BASE_URL/v1/oauth2/token")"
+          TOKEN="$(printf '%s' "$TOKEN_RESPONSE" | jq -r '.access_token')"
+          echo "PayPal token scopes: $(printf '%s' "$TOKEN_RESPONSE" | jq -r '.scope // "not returned"')"
 
           if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
             echo "PayPal did not return an access token."
@@ -65,11 +67,17 @@ jobs:
 
           URL="$PAYPAL_BASE_URL/v1/reporting/transactions?start_date=$START_DATE&end_date=$END_DATE&transaction_status=S&page_size=100&page=1"
 
-          curl -fsS --retry 3 \
+          HTTP_STATUS="$(curl -sS --retry 3 -o /tmp/paypal-report.json -w "%{http_code}" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Accept: application/json" \
             -H "PayPal-Enforce-ISO8601-Format: true" \
-            "$URL" > /tmp/paypal-report.json
+            "$URL")"
+          echo "PayPal Transaction Reporting HTTP status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "PayPal response:"
+            jq . /tmp/paypal-report.json 2>/dev/null || cat /tmp/paypal-report.json
+            exit 1
+          fi
 
           jq -e '.transaction_details // []' /tmp/paypal-report.json >/dev/null
 
