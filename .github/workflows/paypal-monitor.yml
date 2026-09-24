@@ -30,7 +30,7 @@ jobs:
           PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
           PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
           PAYPAL_BASE_URL: https://api-m.sandbox.paypal.com
-          LOOKBACK_MINUTES: "1440"
+          LOOKBACK_MINUTES: "15"
           MIN_AMOUNT: "0"
         shell: bash
         run: |
