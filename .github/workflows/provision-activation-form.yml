@@ -49,13 +49,10 @@ jobs:
                 createNewContactForNewEmail:true,
                 editable:true,
                 language:"en",
-                lifecycleStages:[
-                  {objectTypeId:"0-1",value:"customer"},
-                  {objectTypeId:"0-2",value:"customer"}
-                ],
                 prePopulateKnownValues:true,
                 recaptchaEnabled:true,
-                embedType:"V3"
+                embedType:"V3",
+                postSubmitAction:{type:"thank_you",value:"Activation received. Your setup is now in the Vexora AI onboarding queue."}
               },
               displayOptions:{
                 renderRawHtml:false,
