@@ -158,6 +158,10 @@ grep -q 'lifecyclestage:"customer"' .github/workflows/paypal-monitor.yml
 grep -q 'customer|evangelist|other' .github/workflows/paypal-monitor.yml
 grep -q 'https://calendly.com/vexora-traveler-ai/30min' .github/workflows/paypal-monitor.yml
 grep -q 'Idempotency-Key' .github/workflows/paypal-monitor.yml
+grep -q 'Notion-side idempotency guard' .github/workflows/paypal-monitor.yml
+grep -q 'Notion onboarding page .* already exists' .github/workflows/paypal-monitor.yml
+grep -q 'Detected payments remain pending until downstream processing succeeds' .github/workflows/paypal-monitor.yml
+grep -q 'Only mark payments processed after all downstream steps in this job have succeeded' .github/workflows/paypal-monitor.yml
 grep -q 'HubSpot-side idempotency guard' .github/workflows/paypal-monitor.yml
 grep -q 'dealname.*EQ' .github/workflows/paypal-monitor.yml
 
