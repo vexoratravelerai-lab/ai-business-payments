@@ -260,7 +260,7 @@ jobs:
             HTML="<p>مرحبًا ${SAFE_NAME:-عميلنا الكريم}،</p><p>شكرًا لك على تأكيد الدفع.</p><p>تم تسجيل دفعتك وفتح ملف بدء التنفيذ الخاص بك.</p><p><strong>الخطوة التالية:</strong></p><ol><li>اختيار وقت الاجتماع من رابط Calendly.</li><li>جمع المعلومات الأساسية عن نشاطك.</li><li>بدء إعداد الأتمتة ومتابعة أول نتيجة.</li></ol><p><a href=\"https://calendly.com/vexora-traveler-ai/30min\">احجز موعد الاجتماع من هنا</a></p><p>تحياتي،<br>Vexora AI</p>"
             PAYLOAD="$(jq -n --arg from "Vexora AI <onboarding@resend.dev>" --arg to "$PAYER_EMAIL" --arg subject "AI Business — Welcome & Next Step" --arg html "$HTML" '{from:$from,to:[$to],subject:$subject,html:$html}')"
 
-            STATUS="$(curl -sS --retry 3 -o /tmp/resend-response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $RESEND_API_KEY" -H "Content-Type: application/json" --data "$PAYLOAD" "https://api.resend.com/emails")"
+            STATUS="$(curl -sS --retry 3 -o /tmp/resend-response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $RESEND_API_KEY" -H "Content-Type: application/json" -H "Idempotency-Key: paypal-$TX_ID-welcome-v1" --data "$PAYLOAD" "https://api.resend.com/emails")"
             echo "Resend welcome email for PayPal transaction $TX_ID to $PAYER_EMAIL: HTTP $STATUS"
             if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
               jq . /tmp/resend-response.json 2>/dev/null || cat /tmp/resend-response.json
