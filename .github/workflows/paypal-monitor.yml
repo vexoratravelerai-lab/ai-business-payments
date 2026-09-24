@@ -128,8 +128,10 @@ jobs:
             CURRENCY="$(printf '%s' "$payment" | jq -r '.transaction_amount.currency_code // "USD"')"
             SUBJECT="$(printf '%s' "$payment" | jq -r '.transaction_subject // "PayPal payment"')"
             ACCOUNT_ID="$(printf '%s' "$payment" | jq -r '.paypal_account_id // ""')"
+            PAYER_EMAIL="$(printf '%s' "$payment" | jq -r '.payer_info.email_address // ""')"
+            PAYER_NAME="$(printf '%s' "$payment" | jq -r '.payer_info.payer_name.full_name // ""')"
 
-            PAYLOAD="$(jq -n --arg name "PayPal Payment $TX_ID" --arg amount "$AMOUNT" --arg currency "$CURRENCY" --arg subject "$SUBJECT" --arg tx "$TX_ID" --arg account "$ACCOUNT_ID" '{properties:{dealname:$name,amount:$amount,description:("PayPal transaction: "+$tx+" | Currency: "+$currency+" | Subject: "+$subject+" | PayPal account: "+$account)}}')"
+            PAYLOAD="$(jq -n --arg name "PayPal Payment $TX_ID" --arg amount "$AMOUNT" --arg currency "$CURRENCY" --arg subject "$SUBJECT" --arg tx "$TX_ID" --arg account "$ACCOUNT_ID" --arg email "$PAYER_EMAIL" --arg payer "$PAYER_NAME" '{properties:{dealname:$name,amount:$amount,description:("PayPal transaction: "+$tx+" | Currency: "+$currency+" | Subject: "+$subject+" | PayPal account: "+$account+" | Payer: "+$payer+" | Email: "+$email)}}')"
 
             STATUS="$(curl -sS --retry 3 -o /tmp/hubspot-response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY" -H "Content-Type: application/json" --data "$PAYLOAD" "https://api.hubapi.com/crm/v3/objects/deals")"
 
@@ -137,6 +139,39 @@ jobs:
             if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
               jq . /tmp/hubspot-response.json 2>/dev/null || cat /tmp/hubspot-response.json
               exit 1
+            fi
+
+            DEAL_ID="$(jq -r '.id' /tmp/hubspot-response.json)"
+
+            if [ -n "$PAYER_EMAIL" ] && [ "$PAYER_EMAIL" != "null" ]; then
+              CONTACT_SEARCH_PAYLOAD="$(jq -n --arg email "$PAYER_EMAIL" '{filterGroups:[{filters:[{propertyName:"email",operator:"EQ",value:$email}]}],properties:["email","firstname","lastname"],limit:1}')"
+              SEARCH_STATUS="$(curl -sS --retry 3 -o /tmp/hubspot-contact-search.json -w "%{http_code}" -X POST -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY" -H "Content-Type: application/json" --data "$CONTACT_SEARCH_PAYLOAD" "https://api.hubapi.com/crm/v3/objects/contacts/search")"
+
+              if [ "$SEARCH_STATUS" != "200" ]; then
+                jq . /tmp/hubspot-contact-search.json 2>/dev/null || cat /tmp/hubspot-contact-search.json
+                exit 1
+              fi
+
+              CONTACT_ID="$(jq -r '.results[0].id // ""' /tmp/hubspot-contact-search.json)"
+
+              if [ -z "$CONTACT_ID" ]; then
+                CONTACT_PAYLOAD="$(jq -n --arg email "$PAYER_EMAIL" --arg name "$PAYER_NAME" '{properties:{email:$email,firstname:(if $name == "" then null else ($name | split(" ")[0]) end),lastname:(if $name == "" then null else (($name | split(" ") | .[1:] | join(" "))) end)}} | walk(if type == "object" then with_entries(select(.value != null)) else . end)')"
+                CONTACT_STATUS="$(curl -sS --retry 3 -o /tmp/hubspot-contact-response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY" -H "Content-Type: application/json" --data "$CONTACT_PAYLOAD" "https://api.hubapi.com/crm/v3/objects/contacts")"
+                if [ "$CONTACT_STATUS" -lt 200 ] || [ "$CONTACT_STATUS" -ge 300 ]; then
+                  jq . /tmp/hubspot-contact-response.json 2>/dev/null || cat /tmp/hubspot-contact-response.json
+                  exit 1
+                fi
+                CONTACT_ID="$(jq -r '.id' /tmp/hubspot-contact-response.json)"
+              fi
+
+              ASSOC_STATUS="$(curl -sS --retry 3 -o /tmp/hubspot-association-response.json -w "%{http_code}" -X PUT -H "Authorization: Bearer $HUBSPOT_SERVICE_KEY" -H "Content-Type: application/json" "https://api.hubapi.com/crm/v4/objects/deals/$DEAL_ID/associations/contacts/$CONTACT_ID/3")"
+              echo "HubSpot contact association for PayPal transaction $TX_ID: HTTP $ASSOC_STATUS"
+              if [ "$ASSOC_STATUS" -lt 200 ] || [ "$ASSOC_STATUS" -ge 300 ]; then
+                jq . /tmp/hubspot-association-response.json 2>/dev/null || cat /tmp/hubspot-association-response.json
+                exit 1
+              fi
+            else
+              echo "No payer email was supplied by PayPal for transaction $TX_ID; deal created without a contact."
             fi
           done
 
@@ -165,14 +200,16 @@ jobs:
             AMOUNT="$(printf '%s' "$payment" | jq -r '.amount_value')"
             CURRENCY="$(printf '%s' "$payment" | jq -r '.transaction_amount.currency_code // "USD"')"
             SUBJECT="$(printf '%s' "$payment" | jq -r '.transaction_subject // "PayPal payment"')"
+            PAYER_EMAIL="$(printf '%s' "$payment" | jq -r '.payer_info.email_address // ""')"
 
-            PAYLOAD="$(jq -n               --arg parent "$NOTION_PARENT_PAGE_ID"               --arg title "Client Onboarding — PayPal $TX_ID"               --arg tx "$TX_ID"               --arg amount "$AMOUNT"               --arg currency "$CURRENCY"               --arg subject "$SUBJECT"               '{
+            PAYLOAD="$(jq -n               --arg parent "$NOTION_PARENT_PAGE_ID"               --arg title "Client Onboarding — PayPal $TX_ID"               --arg tx "$TX_ID"               --arg amount "$AMOUNT"               --arg currency "$CURRENCY"               --arg subject "$SUBJECT"               --arg email "$PAYER_EMAIL"               '{
                 parent:{page_id:$parent},
                 properties:{title:{title:[{text:{content:$title}}]}},
                 children:[
                   {object:"block",type:"heading_2",heading_2:{rich_text:[{type:"text",text:{content:"Payment"}}]}},
                   {object:"block",type:"paragraph",paragraph:{rich_text:[{type:"text",text:{content:("Status: Paid | PayPal transaction: "+$tx+" | Amount: "+$amount+" "+$currency)}}]}},
                   {object:"block",type:"paragraph",paragraph:{rich_text:[{type:"text",text:{content:("Subject: "+$subject)}}]}},
+                  {object:"block",type:"paragraph",paragraph:{rich_text:[{type:"text",text:{content:("Customer email: "+$email)}}]}},
                   {object:"block",type:"heading_2",heading_2:{rich_text:[{type:"text",text:{content:"Onboarding"}}]}},
                   {object:"block",type:"to_do",to_do:{rich_text:[{type:"text",text:{content:"Confirm customer information"}}],checked:false}},
                   {object:"block",type:"to_do",to_do:{rich_text:[{type:"text",text:{content:"Schedule onboarding meeting"}}],checked:false}},
