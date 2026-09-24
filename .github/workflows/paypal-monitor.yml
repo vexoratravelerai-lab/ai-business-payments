@@ -78,8 +78,11 @@ jobs:
           jq -e '.transaction_details // []' /tmp/paypal-report.json >/dev/null
           jq --argjson min_amount "$MIN_AMOUNT" '
             .transaction_details // []
-            | map(.transaction_info // {})
-            | map(select(.transaction_id != null))
+            | map(select(.transaction_info.transaction_id != null))
+            | map(
+                (.transaction_info // {})
+                + {payer_info: (.payer_info // null)}
+              )
             | map(. + {amount_value: ((.transaction_amount.value // "0") | tonumber), amount_currency: (.transaction_amount.currency // null)})
             | map(select(.transaction_status == "S"))
             | map(select(.transaction_event_code != "T1900"))
