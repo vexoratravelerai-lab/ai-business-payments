@@ -6,87 +6,27 @@ on:
     paths:
       - ".github/workflows/paypal-monitor.yml"
       - ".github/workflows/paypal-monitor-logic-test.yml"
+      - "scripts/paypal-monitor-logic-test.sh"
   workflow_dispatch:
 
 jobs:
   test-monitor-logic:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Test payer information preservation
+      - name: Run isolated PayPal monitor logic harness
         shell: bash
         run: |
           set -euo pipefail
+          bash scripts/paypal-monitor-logic-test.sh
 
-          cat > /tmp/paypal-fixture.json <<'JSON'
-          {
-            "transaction_details": [
-              {
-                "transaction_info": {
-                  "transaction_id": "UNIT-TEST-001",
-                  "transaction_status": "S",
-                  "transaction_event_code": "T0000",
-                  "transaction_amount": {
-                    "value": "10.00",
-                    "currency": "USD"
-                  }
-                },
-                "payer_info": {
-                  "email_address": "unit-test@example.invalid",
-                  "payer_name": {
-                    "full_name": "Unit Test Customer"
-                  }
-                }
-              }
-            ]
-          }
-          JSON
-
-          jq --argjson min_amount 0 '
-            .transaction_details // []
-            | map(select(.transaction_info.transaction_id != null))
-            | map((.transaction_info // {}) + {payer_info: (.payer_info // null)})
-            | map(. + {
-                amount_value: ((.transaction_amount.value // "0") | tonumber),
-                amount_currency: (.transaction_amount.currency // null)
-              })
-            | map(select(.transaction_status == "S"))
-            | map(select(.transaction_event_code != "T1900"))
-            | map(select(.amount_value >= $min_amount))
-          ' /tmp/paypal-fixture.json > /tmp/payments.json
-
-          test "$(jq -r '.[0].transaction_id' /tmp/payments.json)" = "UNIT-TEST-001"
-          test "$(jq -r '.[0].payer_info.email_address' /tmp/payments.json)" = "unit-test@example.invalid"
-          test "$(jq -r '.[0].payer_info.payer_name.full_name' /tmp/payments.json)" = "Unit Test Customer"
-
-      - name: Test lifecycle protection
+      - name: Verify production workflow file is tracked
         shell: bash
         run: |
           set -euo pipefail
-
-          assert_promotion() {
-            case "$1" in
-              ""|subscriber|lead|marketingqualifiedlead|salesqualifiedlead|opportunity) echo customer ;;
-              customer|evangelist|other) echo unchanged ;;
-              *) echo unchanged ;;
-            esac
-          }
-
-          test "$(assert_promotion "lead")" = "customer"
-          test "$(assert_promotion "opportunity")" = "customer"
-          test "$(assert_promotion "customer")" = "unchanged"
-          test "$(assert_promotion "evangelist")" = "unchanged"
-
-      - name: Test production workflow invariants
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -q '+ {payer_info: (.payer_info // null)}' .github/workflows/paypal-monitor.yml
-          grep -q 'Notion Funnel Tracker already contains PayPal transaction' .github/workflows/paypal-monitor.yml
-          grep -q 'lifecyclestage:"customer"' .github/workflows/paypal-monitor.yml
-          grep -q 'customer|evangelist|other' .github/workflows/paypal-monitor.yml
-          grep -q 'https://calendly.com/vexora-traveler-ai/30min' .github/workflows/paypal-monitor.yml
-
-          echo "All PayPal monitor invariants passed."
+          test -s .github/workflows/paypal-monitor.yml
+          test -s scripts/paypal-monitor-logic-test.sh
+          echo "PASS: production workflow and harness are present."
