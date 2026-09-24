@@ -253,7 +253,15 @@ jobs:
               continue
             fi
 
-                        PAYLOAD="$(jq -n               --arg parent "$NOTION_PARENT_PAGE_ID"               --arg title "$PAGE_TITLE"               --arg tx "$TX_ID"               --arg amount "$AMOUNT"               --arg currency "$CURRENCY"               --arg subject "$SUBJECT"               --arg email "$PAYER_EMAIL"               '{
+                        PAYLOAD="$(jq -n \
+              --arg parent "$NOTION_PARENT_PAGE_ID" \
+              --arg title "$PAGE_TITLE" \
+              --arg tx "$TX_ID" \
+              --arg amount "$AMOUNT" \
+              --arg currency "$CURRENCY" \
+              --arg subject "$SUBJECT" \
+              --arg email "$PAYER_EMAIL" \
+              '{
                 parent:{page_id:$parent},
                 properties:{title:{title:[{text:{content:$title}}]}},
                 children:[
