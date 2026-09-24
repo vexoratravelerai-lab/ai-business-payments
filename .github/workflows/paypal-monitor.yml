@@ -43,9 +43,6 @@ jobs:
             exit 1
           fi
 
-          mkdir -p data
-          [ -f data/processed_transactions.json ] || printf '[]\n' > data/processed_transactions.json
-
           echo "Requesting PayPal access token..."
           TOKEN_RESPONSE="$(curl -sS --retry 3 -u "$PAYPAL_CLIENT_ID:$PAYPAL_CLIENT_SECRET" -H "Accept: application/json" -H "Accept-Language: en_US" -H "Content-Type: application/x-www-form-urlencoded" --data "grant_type=client_credentials" "$PAYPAL_BASE_URL/v1/oauth2/token")"
           TOKEN="$(printf '%s' "$TOKEN_RESPONSE" | jq -r '.access_token')"
@@ -89,22 +86,12 @@ jobs:
             | map(select(.amount_value >= $min_amount))
           ' /tmp/paypal-report.json > /tmp/payments.json
 
-          jq --slurpfile current data/processed_transactions.json '
-            map(select(.transaction_id as $id | ([$current[0][]?.transaction_id] | index($id)) == null))
-          ' /tmp/payments.json > /tmp/new-payments.json
+          # Downstream systems provide idempotency: HubSpot deal name, Notion Payment ID/page title, and Resend idempotency key.
+          # We intentionally re-scan the lookback window so a payment remains recoverable after a transient failure.
+          cp /tmp/payments.json /tmp/new-payments.json
 
-          NEW_COUNT="$(jq 'length' /tmp/new-payments.json)"
-          echo "New successful PayPal payments detected: $NEW_COUNT"
-
-          if [ "$NEW_COUNT" -gt 0 ]; then
-            # Keep payer identity in the runner only. The repository is public, so persistent state must not contain customer PII.
-            jq -s --arg now "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" '.[0] | map((. + {detected_at: $now}) | del(.payer_info))' /tmp/new-payments.json > data/new_payments.json
-            echo "Detected payments remain pending until downstream processing succeeds."
-          else
-            printf '[]\n' > data/new_payments.json
-          fi
-
-          echo "Processed transaction state now contains $(jq 'length' data/processed_transactions.json) transaction(s)."
+          PAYMENT_COUNT="$(jq 'length' /tmp/new-payments.json)"
+          echo "Successful PayPal payments in lookback window: $PAYMENT_COUNT"
 
       - name: Send new payments to HubSpot
         if: success()
@@ -425,24 +412,3 @@ jobs:
               exit 1
             fi
           done
-
-      - name: Save payment state
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Commit payment state only after all downstream steps in this job have succeeded.
-          if [ "$(jq 'length' /tmp/new-payments.json)" -gt 0 ]; then
-            jq -s '.[0] + .[1] | map(del(.payer_info)) | unique_by(.transaction_id)' data/processed_transactions.json /tmp/new-payments.json > /tmp/processed.json
-            mv /tmp/processed.json data/processed_transactions.json
-          fi
-
-          # data/new_payments.json is only a sanitized snapshot; the full payload remains in /tmp for this run.
-          printf '[]\n' > data/new_payments.json
-          git add data/processed_transactions.json data/new_payments.json
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
-          fi
-          git commit -m "chore: update PayPal payment state"
-          git pull --rebase origin main
-          git push
