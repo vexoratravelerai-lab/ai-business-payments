@@ -1,0 +1,47 @@
+name: Repository Security Guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Block payment state files and obvious hardcoded secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          forbidden=(
+            "data/processed_transactions.json"
+            "data/new_payments.json"
+            "data/pending_welcome_emails.json"
+          )
+
+          for path in "${forbidden[@]}"; do
+            if git ls-files --error-unmatch "$path" >/dev/null 2>&1; then
+              echo "SECURITY FAILURE: forbidden payment-state file is tracked: $path"
+              exit 1
+            fi
+          done
+
+          if git grep -nE 'PAYPAL_(CLIENT_)?SECRET[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9._-]{12,}' -- ':!scripts/paypal-monitor-logic-test.sh'; then
+            echo "SECURITY FAILURE: possible hardcoded PayPal secret detected."
+            exit 1
+          fi
+
+          if git grep -nE 'RESEND_API_KEY[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9._-]{20,}' -- ':!scripts/paypal-monitor-logic-test.sh'; then
+            echo "SECURITY FAILURE: possible hardcoded Resend API key detected."
+            exit 1
+          fi
+
+          echo "PASS: no forbidden payment-state files are tracked."
+          echo "PASS: no obvious hardcoded payment/email secrets detected."
