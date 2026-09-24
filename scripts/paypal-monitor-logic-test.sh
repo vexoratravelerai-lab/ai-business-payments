@@ -47,7 +47,7 @@ test "$(jq -r 'length' "$TMP_DIR/payments.json")" = "1"
 test "$(jq -r '.[0].transaction_id' "$TMP_DIR/payments.json")" = "UNIT-TEST-001"
 test "$(jq -r '.[0].payer_info.email_address' "$TMP_DIR/payments.json")" = "unit-test@example.invalid"
 test "$(jq -r '.[0].payer_info.payer_name.full_name' "$TMP_DIR/payments.json")" = "Unit Test Customer"
-test "$(jq -r '.[0].amount_value' "$TMP_DIR/payments.json")" = "10"
+test "$(jq -r '.[0].amount_value' "$TMP_DIR/payments.json")" = "10.00"
 test "$(jq -r '.[0].amount_currency' "$TMP_DIR/payments.json")" = "USD"
 
 PAYMENT="$(jq -c '.[0]' "$TMP_DIR/payments.json")"
@@ -77,7 +77,7 @@ DEAL_PAYLOAD="$(jq -n \
   }')"
 
 test "$(jq -r '.properties.dealstage' <<<"$DEAL_PAYLOAD")" = "closedwon"
-test "$(jq -r '.properties.amount' <<<"$DEAL_PAYLOAD")" = "10"
+test "$(jq -r '.properties.amount' <<<"$DEAL_PAYLOAD")" = "10.00"
 grep -q "unit-test@example.invalid" <<<"$DEAL_PAYLOAD"
 grep -q "Unit Test Customer" <<<"$DEAL_PAYLOAD"
 
